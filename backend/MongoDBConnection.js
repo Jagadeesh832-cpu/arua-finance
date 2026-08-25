@@ -33,8 +33,8 @@ const ConnectMongoDB = async () => {
     return;
   }
 
-  const uri = process.env.MONGO_URI;
-  const dbName = process.env.DBName || 'financeai';
+  const uri = process.env.MONGO_URI ? process.env.MONGO_URI.trim() : '';
+  const dbName = process.env.DBName ? process.env.DBName.trim() : 'arua_finance';
 
   if (!uri) {
     console.warn("⚠️ MONGO_URI is not defined in environment variables. MongoDB connection skipped.");
