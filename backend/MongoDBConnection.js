@@ -9,7 +9,7 @@ let isConnected = false;
 // Attach global Mongoose connection event listeners for clear status logging
 mongoose.connection.on('connected', () => {
   isConnected = true;
-  console.log(`✅ MongoDB Connected successfully to database: ${process.env.DBName || 'financeai'}`);
+  console.log(`✅ MongoDB Connected successfully to database: ${mongoose.connection.name || process.env.DBName || 'arua_finance'}`);
 });
 
 mongoose.connection.on('error', (err) => {
