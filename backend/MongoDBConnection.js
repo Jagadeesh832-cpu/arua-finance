@@ -33,8 +33,11 @@ const ConnectMongoDB = async () => {
     return;
   }
 
-  const uri = process.env.MONGO_URI ? process.env.MONGO_URI.trim() : '';
-  const dbName = process.env.DBName ? process.env.DBName.trim() : 'arua_finance';
+  let uri = process.env.MONGO_URI || process.env.MONGODB_URI || '';
+  uri = uri.trim().replace(/^["']|["']$/g, '');
+
+  let dbName = process.env.DBName || process.env.DB_NAME || 'arua_finance';
+  dbName = dbName.trim().replace(/^["']|["']$/g, '');
 
   if (!uri) {
     console.warn("⚠️ MONGO_URI is not defined in environment variables. MongoDB connection skipped.");
@@ -44,8 +47,9 @@ const ConnectMongoDB = async () => {
   try {
     const conn = await mongoose.connect(uri, {
       dbName: dbName,
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
+      maxPoolSize: 10,
     });
     isConnected = true;
     return conn;
