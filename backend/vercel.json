@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "github": {
+    "autoJobCancelation": true,
+    "productionBranch": null
+  },
+  "builds": [
+    {
+      "src": "index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "index.js"
+    }
+  ]
+}
