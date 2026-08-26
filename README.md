@@ -503,43 +503,43 @@ arua-finance/
 <table align="center">
   <tr>
     <td align="center" width="16.66%">
-      <a href="https://github.com/USERNAME_PRAVEEN">
-        <img src="https://github.com/USERNAME_PRAVEEN.png?size=150" width="100px;" alt="T. Praveen Kumar" style="border-radius: 50%;"/><br/>
+      <a href="https://github.com/praveenkumar-AI05">
+        <img src="https://github.com/praveenkumar-AI05.png?size=150" width="100px;" alt="T. Praveen Kumar" style="border-radius: 50%;"/><br/>
         <br/>
         <b>T. Praveen Kumar</b>
       </a>
     </td>
     <td align="center" width="16.66%">
-      <a href="https://github.com/USERNAME_RAFIQ">
-        <img src="https://github.com/USERNAME_RAFIQ.png?size=150" width="100px;" alt="S. Mohammad Rafiq" style="border-radius: 50%;"/><br/>
+      <a href="https://github.com/shaiks67">
+        <img src="https://github.com/shaiks67.png?size=150" width="100px;" alt="S. Mohammad Rafiq" style="border-radius: 50%;"/><br/>
         <br/>
         <b>S. Mohammad Rafiq</b>
       </a>
     </td>
     <td align="center" width="16.66%">
-      <a href="https://github.com/USERNAME_CHARAN">
-        <img src="https://github.com/USERNAME_CHARAN.png?size=150" width="100px;" alt="G. Charan Kumar" style="border-radius: 50%;"/><br/>
+      <a href="https://github.com/Charankumar-coded">
+        <img src="https://github.com/Charankumar-coded.png?size=150" width="100px;" alt="G. Charan Kumar" style="border-radius: 50%;"/><br/>
         <br/>
         <b>G. Charan Kumar</b>
       </a>
     </td>
     <td align="center" width="16.66%">
-      <a href="https://github.com/USERNAME_JAGADEESH">
-        <img src="https://github.com/USERNAME_JAGADEESH.png?size=150" width="100px;" alt="V. Jagadeesh" style="border-radius: 50%;"/><br/>
+      <a href="https://github.com/jagadeesh832-cpu">
+        <img src="https://github.com/jagadeesh832-cpu.png?size=150" width="100px;" alt="V. Jagadeesh" style="border-radius: 50%;"/><br/>
         <br/>
         <b>V. Jagadeesh</b>
       </a>
     </td>
     <td align="center" width="16.66%">
-      <a href="https://github.com/USERNAME_VINUSHA">
-        <img src="https://github.com/USERNAME_VINUSHA.png?size=150" width="100px;" alt="G. Vinusha" style="border-radius: 50%;"/><br/>
+      <a href="https://github.com/vinusha986">
+        <img src="https://github.com/vinusha986.png?size=150" width="100px;" alt="G. Vinusha" style="border-radius: 50%;"/><br/>
         <br/>
         <b>G. Vinusha</b>
       </a>
     </td>
     <td align="center" width="16.66%">
-      <a href="https://github.com/USERNAME_BHAVYA">
-        <img src="https://github.com/USERNAME_BHAVYA.png?size=150" width="100px;" alt="P. Bhavya" style="border-radius: 50%;"/><br/>
+      <a href="https://github.com/hhanumanthgowd-sketch">
+        <img src="https://github.com/hhanumanthgowd-sketch.png?size=150" width="100px;" alt="P. Bhavya" style="border-radius: 50%;"/><br/>
         <br/>
         <b>P. Bhavya</b>
       </a>
