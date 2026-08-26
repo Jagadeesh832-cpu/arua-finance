@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/helper/auth";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getApiBaseUrl } from "@/helper/apiUrl";
 
 export default function useChatBotGemini() {
   const { LoggedInUserData } = useAuth();
@@ -30,7 +31,7 @@ export default function useChatBotGemini() {
 
     try {
       // 1. Try Backend-Proxied Contextual AI Coach Endpoint
-      const baseUrl = import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_ServerUrl || "";
+      const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/ai/coach`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

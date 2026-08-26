@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useEffect, useRef } from "react";
 import SaveUserDataFunc from "./SaveUserDataFunc";
 import GetUserDataFunc from "./GetUserDataFunc";
+import { getApiBaseUrl } from "./apiUrl";
 
 export const OTP_LENGTH = parseInt(import.meta.env.VITE_OTP_LENGTH || "6", 10);
 
@@ -130,7 +131,7 @@ export function useRajAuth() {
     setIsSubmitting(true);
 
     try {
-      const baseUrl = import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_ServerUrl || "";
+      const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/auth/signin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -177,7 +178,7 @@ export function useRajAuth() {
     setIsSendingOtp(true);
 
     try {
-      const baseUrl = import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_ServerUrl || "";
+      const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/auth/signup-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -232,7 +233,7 @@ export function useRajAuth() {
     setIsVerifyingOtp(true);
 
     try {
-      const baseUrl = import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_ServerUrl || "";
+      const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/auth/signup-verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -285,7 +286,7 @@ export function useRajAuth() {
     setIsSendingOtp(true);
 
     try {
-      const baseUrl = import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_ServerUrl || "";
+      const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/auth/signup-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

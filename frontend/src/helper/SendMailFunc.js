@@ -1,6 +1,8 @@
+import { getApiBaseUrl } from './apiUrl';
+
 export default async function SendMailFunc(mailData) {
   try {
-    const baseUrl = import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_ServerUrl || '';
+    const baseUrl = getApiBaseUrl();
     const response = await fetch(`${baseUrl}/api/sendmail`, {
       method: 'POST',
       headers: {

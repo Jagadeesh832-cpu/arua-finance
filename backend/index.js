@@ -23,42 +23,30 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-// Production-grade CORS middleware
-const allowedOrigins = [
-  process.env.CLIENT_URL,
-  process.env.FRONTEND_URL,
-  process.env.CLIENT_ORIGIN,
-  ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) : []),
-  'http://localhost:8080',
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'http://127.0.0.1:8080',
-  'http://127.0.0.1:5173'
-].filter(Boolean);
+// Universal production-grade CORS middleware
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow all incoming origins (all Vercel domains, preview deployments, custom domains, and local environments)
+    callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'Access-Control-Request-Private-Network',
+    'Access-Control-Request-Headers'
+  ]
+}));
 
+// Handle private network requests & preflight OPTIONS
 app.use((req, res, next) => {
-  const origin = req.headers.origin;
-
-  if (origin) {
-    const isAllowed = allowedOrigins.includes(origin) ||
-      origin.endsWith('.vercel.app') ||
-      process.env.NODE_ENV !== 'production';
-
-    if (isAllowed) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-    }
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  }
-
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Access-Control-Request-Private-Network, Access-Control-Request-Headers');
-  
   if (req.headers['access-control-request-private-network']) {
     res.setHeader('Access-Control-Allow-Private-Network', 'true');
   }
-
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
   }

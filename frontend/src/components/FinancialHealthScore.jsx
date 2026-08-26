@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useAuth } from "@/helper/auth";
 import { calculateHealthScore } from "@/helper/healthScore";
 import { formatINR } from "@/helper/formatters";
+import { getApiBaseUrl } from "@/helper/apiUrl";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,7 +61,7 @@ export default function FinancialHealthScore({ onNavigateTab }) {
   const fetchAiSuggestions = async () => {
     setIsLoadingAi(true);
     try {
-      const baseUrl = import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_ServerUrl || "";
+      const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/ai/coach`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -1,9 +1,11 @@
+import { getApiBaseUrl } from './apiUrl';
+
 export default async function GetUserDataFunc(identifier) {
   try {
     if (!identifier) return null;
     const isPhone = identifier.startsWith('+') || /^\d+$/.test(identifier);
     const paramKey = isPhone ? 'phone' : 'email';
-    const baseUrl = import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_ServerUrl || '';
+    const baseUrl = getApiBaseUrl();
     const response = await fetch(`${baseUrl}/api/user?${paramKey}=${encodeURIComponent(identifier)}`, {
       method: 'GET',
       headers: {

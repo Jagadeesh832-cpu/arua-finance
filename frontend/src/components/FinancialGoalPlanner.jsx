@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useAuth } from "@/helper/auth";
 import { formatINR } from "@/helper/formatters";
+import { getApiBaseUrl } from "@/helper/apiUrl";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,7 +65,7 @@ export default function FinancialGoalPlanner() {
     setIsSubmitting(true);
     try {
       const identifier = LoggedInUserData?.phoneNumber || LoggedInUserData?.email;
-      const baseUrl = import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_ServerUrl || "";
+      const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/user/goals`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -106,7 +107,7 @@ export default function FinancialGoalPlanner() {
   const handleDeleteGoal = async (goalId) => {
     try {
       const identifier = LoggedInUserData?.phoneNumber || LoggedInUserData?.email;
-      const baseUrl = import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_ServerUrl || "";
+      const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/user/goals/${goalId}?identifier=${encodeURIComponent(identifier)}`, {
         method: "DELETE"
       });
@@ -123,7 +124,7 @@ export default function FinancialGoalPlanner() {
     if (!contributeAmount || Number(contributeAmount) <= 0) return;
     try {
       const identifier = LoggedInUserData?.phoneNumber || LoggedInUserData?.email;
-      const baseUrl = import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_ServerUrl || "";
+      const baseUrl = getApiBaseUrl();
       const newTotal = (Number(goal.currentAmount) || 0) + Number(contributeAmount);
       const res = await fetch(`${baseUrl}/api/user/goals/${goal.id || goal._id}`, {
         method: "PUT",
