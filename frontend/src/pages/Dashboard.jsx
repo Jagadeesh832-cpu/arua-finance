@@ -34,7 +34,10 @@ import {
   PieChart,
   FileText,
   Sliders,
-  Shield
+  Shield,
+  ShieldAlert,
+  BellRing,
+  AlertTriangle
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -135,6 +138,69 @@ const Dashboard = () => {
         {/* ========================================================================= */}
         {activeTab === "cockpit" && (
           <div className="space-y-8 animate-fade-in">
+            {/* Real-Time Spending Radar Alert Banner */}
+            {monthlyBudget > 0 && monthlyBudgetPercentage >= 75 && (
+              <div
+                className={`p-4 rounded-2xl border backdrop-blur-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl ${
+                  monthlyBudgetPercentage > 100
+                    ? "bg-rose-950/40 border-rose-800/80 text-rose-200"
+                    : monthlyBudgetPercentage >= 90
+                    ? "bg-amber-950/40 border-amber-800/80 text-amber-200"
+                    : "bg-blue-950/40 border-blue-800/80 text-cyan-200"
+                }`}
+              >
+                <div className="flex items-start space-x-3">
+                  <div
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                      monthlyBudgetPercentage > 100
+                        ? "bg-rose-900/60 text-rose-300 border border-rose-700"
+                        : monthlyBudgetPercentage >= 90
+                        ? "bg-amber-900/60 text-amber-300 border border-amber-700"
+                        : "bg-blue-900/60 text-cyan-300 border border-blue-700"
+                    }`}
+                  >
+                    {monthlyBudgetPercentage > 100 ? (
+                      <ShieldAlert className="w-5 h-5 animate-pulse" />
+                    ) : monthlyBudgetPercentage >= 90 ? (
+                      <AlertTriangle className="w-5 h-5" />
+                    ) : (
+                      <BellRing className="w-5 h-5" />
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-extrabold text-white flex items-center gap-2">
+                      <span>
+                        {monthlyBudgetPercentage > 100
+                          ? "⚠️ Critical Alert: Monthly Budget Exceeded"
+                          : monthlyBudgetPercentage >= 90
+                          ? "⚠️ High Spending Velocity Warning"
+                          : "Smart Spending Radar Notice"}
+                      </span>
+                      <span className="text-[10px] font-mono px-2 py-0.2 rounded bg-black/40 border border-white/10">
+                        {monthlyBudgetPercentage.toFixed(0)}% Limit Used
+                      </span>
+                    </h4>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      {monthlyBudgetPercentage > 100
+                        ? `You have spent ${formatINR(totalExpenses)} against your ${formatINR(monthlyBudget)} monthly limit (${formatINR(Math.abs(remainingBudget))} over budget).`
+                        : `You have utilized ${monthlyBudgetPercentage.toFixed(1)}% of your planned monthly budget. Remaining allowance: ${formatINR(remainingBudget)}.`}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 shrink-0 w-full sm:w-auto">
+                  <Link to="/expenses" className="w-full sm:w-auto">
+                    <Button
+                      size="sm"
+                      className="w-full sm:w-auto text-xs font-bold rounded-xl gradient-bg text-white shadow-md hover:scale-102 transition-all border border-blue-400/30"
+                    >
+                      Inspect Radar
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            )}
+
             {/* 5-Column Quick Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5 animate-slide-up">
               {/* Card 1: Monthly Income */}

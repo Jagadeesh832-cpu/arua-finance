@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import NotFound from "./NotFound";
 import { useAuth } from "@/helper/auth";
+import { useNotifications } from "@/helper/notificationContext";
 import Navbar from "@/components/Navbar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,6 +39,7 @@ import {
 
 const ExpenseTracker = () => {
   const { LoggedInUserData, setLoggedInUserData } = useAuth();
+  const { fetchNotifications } = useNotifications();
   const { toast } = useToast();
 
   const [expenses, setExpenses] = useState([]);
@@ -150,6 +152,9 @@ const ExpenseTracker = () => {
         setExpenses(result.expenses || updatedExpenses);
       }
 
+      // Reactive notification refresh
+      fetchNotifications();
+
       toast({
         title: "Expense logged!",
         description: `${formatINR(newExpense.amount)} for ${newExpense.description} recorded.`,
@@ -220,6 +225,9 @@ const ExpenseTracker = () => {
         setExpenses(result.expenses || updatedExpenses);
       }
 
+      // Reactive notification refresh
+      fetchNotifications();
+
       toast({
         title: "Expense updated",
         description: "Transaction record modified successfully.",
@@ -266,6 +274,9 @@ const ExpenseTracker = () => {
         setLoggedInUserData(result);
         setExpenses(result.expenses || updatedExpenses);
       }
+
+      // Reactive notification refresh
+      fetchNotifications();
 
       toast({
         title: "Expense removed",

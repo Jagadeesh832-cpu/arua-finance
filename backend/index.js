@@ -26,6 +26,12 @@ import { SendMail } from './sendMail.controller.js';
 import { TwoFactorService } from './twofactor.service.js';
 import { AIService } from './ai.service.js';
 import { requireAuth, optionalAuth } from './auth.middleware.js';
+import { Notification } from './notification.model.js';
+import { NotificationController } from './notification.controller.js';
+import { SpendingAlertService } from './spendingAlert.service.js';
+import { AnomalyService } from './anomaly.service.js';
+import { SmsService } from './sms.service.js';
+import { PushService } from './push.service.js';
 
 dotenv.config();
 const app = express();
@@ -102,10 +108,11 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Apply DB connection guard to all /api/auth, /api/user, and /api/ai routes
+// Apply DB connection guard to all /api/auth, /api/user, /api/ai, and /api/notifications routes
 app.use('/api/auth', requireDatabase);
 app.use('/api/user', requireDatabase);
 app.use('/api/ai', requireDatabase);
+app.use('/api/notifications', requireDatabase);
 
 
 // In-memory rate limiting map: key -> { count, expiresAt }
@@ -752,6 +759,16 @@ app.post('/api/user/update', async (req, res) => {
       ...updates
     });
     if (!user) return res.status(404).json({ error: "User not found" });
+
+    // If budget or expenses were modified, trigger alert evaluation
+    if (updates.monthlyBudget !== undefined || updates.expenses !== undefined) {
+      try {
+        await SpendingAlertService.processExpenseChange(user, null, 'budget_change');
+      } catch (alertErr) {
+        console.warn('SpendingAlertService budget update warning:', alertErr.message);
+      }
+    }
+
     res.json(sanitizeUser(user));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -759,7 +776,7 @@ app.post('/api/user/update', async (req, res) => {
 });
 
 // ==========================================
-// 6. Expense Management Endpoints (With Budget Alerting)
+// 6. Expense Management Endpoints (With Real-Time Spending Alerts)
 // ==========================================
 app.get('/api/user/expenses', async (req, res) => {
   try {
@@ -790,46 +807,20 @@ app.post('/api/user/expenses', async (req, res) => {
       date
     });
 
-    // Check budget alert threshold
-    const monthlyBudget = Number(user.monthlyBudget) || 0;
-    const totalExpenses = (user.expenses || []).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-    const budgetBurn = monthlyBudget > 0 ? (totalExpenses / monthlyBudget) * 100 : 0;
-    const alertThreshold = user.notificationPreferences?.budgetThresholds || 80;
-    const emailAlertsEnabled = user.notificationPreferences?.emailAlerts !== false;
-
-    // Check 24-hour spam prevention on budget emails
-    const now = Date.now();
-    const lastAlert = user.lastBudgetAlertSent ? new Date(user.lastBudgetAlertSent).getTime() : 0;
-    const isCooldownOver = now - lastAlert > 24 * 60 * 60 * 1000;
-
-    if (emailAlertsEnabled && budgetBurn >= alertThreshold && isCooldownOver && user.email) {
-      try {
-        await SendMail({
-          email: user.email,
-          subject: `Arua Finance Budget Alert: You have used ${budgetBurn.toFixed(0)}% of your monthly budget`,
-          html: `
-            <div style="font-family: Arial, sans-serif; background-color: #070b14; color: #f8fafc; padding: 25px; border-radius: 14px;">
-              <h2 style="color: #f43f5e; margin-top: 0;">⚠️ Budget Threshold Warning</h2>
-              <p>Hi ${user.name || "Investor"},</p>
-              <p>Your total logged expenses have reached <strong>${formatINR(totalExpenses)}</strong>, which is <strong>${budgetBurn.toFixed(1)}%</strong> of your planned monthly budget (${formatINR(monthlyBudget)}).</p>
-              <p>Recent transaction: <strong>${newExpense.description}</strong> (${formatINR(newExpense.amount)})</p>
-              <p>Log in to Arua Finance to inspect category breakdowns and optimize discretionary spending.</p>
-              <p style="color: #64748b; font-size: 11px; margin-top: 20px;">— Arua Finance AI Engine • Smarter Money. Powered by AI.</p>
-            </div>
-          `
-        });
-        user.lastBudgetAlertSent = new Date();
-        await user.save();
-      } catch (mailErr) {
-        console.warn("Budget alert email error:", mailErr.message);
-      }
+    // Real-Time Spending Alert Pipeline (In-App, SMS, Push, Anomaly Detection, Duplicate Suppression)
+    let alertResult = { alertSummary: [] };
+    try {
+      alertResult = await SpendingAlertService.processExpenseChange(user, newExpense, 'create');
+    } catch (alertErr) {
+      console.warn('SpendingAlertService execution warning:', alertErr.message);
     }
 
     res.status(201).json({
       success: true,
       expense: newExpense,
       user: sanitizeUser(user),
-      expenses: user.expenses
+      expenses: user.expenses,
+      alertsTriggered: alertResult.alertSummary || []
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -844,7 +835,21 @@ app.put('/api/user/expenses/:expenseId', async (req, res) => {
     if (!userIdentifier) return res.status(400).json({ error: "User identifier is required" });
 
     const updatedUser = await updateExpenseInUser(userIdentifier, expenseId, updates);
-    res.json({ success: true, user: sanitizeUser(updatedUser), expenses: updatedUser.expenses });
+    const updatedExpense = (updatedUser.expenses || []).find(e => String(e._id) === String(expenseId) || String(e.id) === String(expenseId));
+
+    let alertResult = { alertSummary: [] };
+    try {
+      alertResult = await SpendingAlertService.processExpenseChange(updatedUser, updatedExpense, 'update');
+    } catch (alertErr) {
+      console.warn('SpendingAlertService update warning:', alertErr.message);
+    }
+
+    res.json({
+      success: true,
+      user: sanitizeUser(updatedUser),
+      expenses: updatedUser.expenses,
+      alertsTriggered: alertResult.alertSummary || []
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -857,11 +862,38 @@ app.delete('/api/user/expenses/:expenseId', async (req, res) => {
     if (!userIdentifier) return res.status(400).json({ error: "User identifier is required" });
 
     const updatedUser = await deleteExpenseFromUser(userIdentifier, expenseId);
-    res.json({ success: true, user: sanitizeUser(updatedUser), expenses: updatedUser.expenses });
+
+    let alertResult = { alertSummary: [] };
+    try {
+      alertResult = await SpendingAlertService.processExpenseChange(updatedUser, null, 'delete');
+    } catch (alertErr) {
+      console.warn('SpendingAlertService delete warning:', alertErr.message);
+    }
+
+    res.json({
+      success: true,
+      user: sanitizeUser(updatedUser),
+      expenses: updatedUser.expenses,
+      alertsTriggered: alertResult.alertSummary || []
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
+
+// ==========================================
+// 6B. In-App, Push & SMS Notification Endpoints
+// ==========================================
+app.get('/api/notifications', optionalAuth, NotificationController.getNotifications);
+app.get('/api/notifications/unread-count', optionalAuth, NotificationController.getUnreadCount);
+app.patch('/api/notifications/read-all', optionalAuth, NotificationController.markAllAsRead);
+app.patch('/api/notifications/:id/read', optionalAuth, NotificationController.markAsRead);
+app.delete('/api/notifications/:id', optionalAuth, NotificationController.deleteNotification);
+app.delete('/api/notifications', optionalAuth, NotificationController.clearAllNotifications);
+app.get('/api/notifications/preferences', optionalAuth, NotificationController.getPreferences);
+app.put('/api/notifications/preferences', optionalAuth, NotificationController.updatePreferences);
+app.post('/api/notifications/push/subscribe', optionalAuth, NotificationController.subscribePush);
+app.post('/api/notifications/push/test', optionalAuth, NotificationController.testNotification);
 
 // ==========================================
 // 7. Financial Goal Management Endpoints

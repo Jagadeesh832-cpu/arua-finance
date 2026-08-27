@@ -116,12 +116,34 @@ const userSchema = new Schema(
       type: Date,
       select: false
     },
+    phoneVerified: {
+      type: Boolean,
+      default: false
+    },
     lastBudgetAlertSent: {
       type: Date
     },
     notificationPreferences: {
+      inAppAlerts: { type: Boolean, default: true },
+      pushAlerts: { type: Boolean, default: false },
+      smsAlerts: { type: Boolean, default: false },
       emailAlerts: { type: Boolean, default: true },
-      budgetThresholds: { type: Number, default: 80 }
+      budgetThresholdAlerts: { type: Boolean, default: true },
+      budgetExceededAlerts: { type: Boolean, default: true },
+      categoryBudgetAlerts: { type: Boolean, default: true },
+      unusualSpendingAlerts: { type: Boolean, default: true },
+      goalMilestoneAlerts: { type: Boolean, default: true },
+      monthlyReportAlerts: { type: Boolean, default: true },
+      aiRecommendationAlerts: { type: Boolean, default: true },
+      budgetThresholds: { type: [Number], default: [50, 75, 90, 100] }
+    },
+    pushSubscriptions: {
+      type: [Schema.Types.Mixed],
+      default: []
+    },
+    triggeredAlerts: {
+      type: Schema.Types.Mixed,
+      default: {}
     },
     age: {
       type: Number,

@@ -15,6 +15,7 @@ import {
   KeyRound
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import NotificationBell from "@/components/NotificationBell";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -97,7 +98,8 @@ const Navbar = () => {
           </nav>
 
           {/* Right Action / Phone Auth Profile Button */}
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3">
+            {user && <NotificationBell />}
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
