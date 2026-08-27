@@ -97,7 +97,6 @@ export default function AIRecommendations() {
         investmentHorizon: parseInt(investmentHorizon) || 5,
         financialGoal: rec.type,
         preferredAssets: preferredAssets || "Mutual Funds, Stocks, Gold",
-        apiKey: import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_GeminiAPI || "",
         customPrompt: `Provide concise, highly actionable financial advice in India for ${rec.type} with ${formatINR(LoggedInUserData.annualIncome || 0)} annual income and ${riskTolerance} risk profile.`
       });
       results.push({

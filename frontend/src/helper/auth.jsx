@@ -278,6 +278,112 @@ export function useRajAuth() {
   };
 
   /**
+   * Direct Email/Password Registration
+   */
+  const registerUser = async (formData) => {
+    setAuthError("");
+    setIsSubmitting(true);
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData)
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setAuthError(data.message || "Failed to register. Please check your details.");
+        return false;
+      }
+
+      if (data.token) {
+        localStorage.setItem("arua_auth_token", data.token);
+      }
+      if (data.user?.phoneNumber) {
+        localStorage.setItem("arua_user_phone", data.user.phoneNumber);
+      }
+      if (data.user?.email) {
+        localStorage.setItem("arua_user_email", data.user.email);
+      }
+
+      setUser(data.user);
+      setLoggedInUserData(data.user);
+      setIsAuthModalOpen(false);
+      return true;
+    } catch (error) {
+      console.error("registerUser error:", error);
+      setAuthError("Network error connecting to registration server. Please try again.");
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  /**
+   * Request Password Reset Email Link
+   */
+  const forgotPassword = async (email) => {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      return data;
+    } catch (error) {
+      console.error("forgotPassword error:", error);
+      return { success: false, message: "Network error requesting password reset." };
+    }
+  };
+
+  /**
+   * Reset Password with Token
+   */
+  const resetPassword = async (token, password, confirmPassword) => {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/auth/reset-password/${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password, confirmPassword })
+      });
+      const data = await res.json();
+      return data;
+    } catch (error) {
+      console.error("resetPassword error:", error);
+      return { success: false, message: "Network error resetting password." };
+    }
+  };
+
+  /**
+   * Change Password (for logged in user)
+   */
+  const changePassword = async (currentPassword, newPassword, confirmPassword) => {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const identifier = user?.email || user?.phoneNumber || LoggedInUserData?.email || LoggedInUserData?.phoneNumber;
+      const res = await fetch(`${baseUrl}/api/auth/change-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("arua_auth_token") || ""}`
+        },
+        body: JSON.stringify({ identifier, currentPassword, newPassword, confirmPassword })
+      });
+      const data = await res.json();
+      return data;
+    } catch (error) {
+      console.error("changePassword error:", error);
+      return { success: false, message: "Network error updating password." };
+    }
+  };
+
+  /**
    * 4. Resend Sign Up SMS OTP
    */
   const resendSignUpOtp = async () => {
@@ -321,6 +427,7 @@ export function useRajAuth() {
       localStorage.removeItem("arua_user_phone");
       localStorage.removeItem("arua_user_email");
       localStorage.removeItem("arua_auth_token");
+      localStorage.removeItem("arua_user_data");
       setUser(null);
       setLoggedInUserData(null);
     } catch (error) {
@@ -356,6 +463,10 @@ export function useRajAuth() {
     setOtpError,
     resendCooldown,
     signInUser,
+    registerUser,
+    forgotPassword,
+    resetPassword,
+    changePassword,
     startSignUpOtp,
     verifySignUpOtp,
     resendSignUpOtp,

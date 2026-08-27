@@ -41,6 +41,34 @@ const goalSchema = new Schema({
   }
 });
 
+const expenseSchema = new Schema({
+  description: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  amount: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  category: {
+    type: String,
+    required: true,
+    default: "Other",
+    trim: true
+  },
+  paymentMethod: {
+    type: String,
+    default: "UPI",
+    enum: ["UPI", "Cash", "Credit Card", "Debit Card", "Net Banking", "Other"]
+  },
+  date: {
+    type: Date,
+    default: Date.now
+  }
+});
+
 const userSchema = new Schema(
   {
     firstName: {
@@ -80,20 +108,28 @@ const userSchema = new Schema(
       type: String,
       select: false
     },
+    resetPasswordToken: {
+      type: String,
+      select: false
+    },
+    resetPasswordExpires: {
+      type: Date,
+      select: false
+    },
+    lastBudgetAlertSent: {
+      type: Date
+    },
+    notificationPreferences: {
+      emailAlerts: { type: Boolean, default: true },
+      budgetThresholds: { type: Number, default: 80 }
+    },
     age: {
       type: Number,
       min: 0,
       default: 25
     },
     expenses: {
-      type: [
-        {
-          description: String,
-          amount: Number,
-          category: String,
-          date: Date
-        }
-      ],
+      type: [expenseSchema],
       default: []
     },
     goals: {

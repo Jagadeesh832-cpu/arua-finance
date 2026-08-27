@@ -11,6 +11,13 @@ import {
   updateUserDetails,
   generateAuthToken,
   sanitizeUser,
+  findUserByIdentifier,
+  createPasswordResetToken,
+  resetPasswordWithToken,
+  changeUserPassword,
+  addExpenseToUser,
+  updateExpenseInUser,
+  deleteExpenseFromUser,
   addGoal,
   updateGoal,
   deleteGoal
@@ -18,6 +25,7 @@ import {
 import { SendMail } from './sendMail.controller.js';
 import { TwoFactorService } from './twofactor.service.js';
 import { AIService } from './ai.service.js';
+import { requireAuth, optionalAuth } from './auth.middleware.js';
 
 dotenv.config();
 const app = express();
@@ -103,7 +111,7 @@ app.use('/api/ai', requireDatabase);
 // In-memory rate limiting map: key -> { count, expiresAt }
 const rateLimitMap = new Map();
 
-function checkRateLimit(key, maxRequests = 5, windowMs = 5 * 60 * 1000) {
+function checkRateLimit(key, maxRequests = 10, windowMs = 5 * 60 * 1000) {
   const now = Date.now();
   const entry = rateLimitMap.get(key);
   if (!entry || entry.expiresAt < now) {
@@ -127,8 +135,331 @@ function maskPhone(phone) {
   return phone;
 }
 
+function formatINR(val) {
+  const num = Number(val) || 0;
+  return "₹" + num.toLocaleString("en-IN");
+}
+
 // ==========================================
-// 1. SIGN UP: Step 1 - Validate & Send SMS OTP
+// 1. AUTHENTICATION: Direct Email Registration
+// ==========================================
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { firstName, lastName, name, email, phoneNumber, password, confirmPassword } = req.body;
+
+    const fName = (firstName || "").trim();
+    const lName = (lastName || "").trim();
+    const fullName = name ? name.trim() : (fName || lName ? `${fName} ${lName}`.trim() : "");
+
+    if (!fullName && !fName) {
+      return res.status(400).json({ success: false, message: "Please enter your full name." });
+    }
+
+    if (!email || !email.trim()) {
+      return res.status(400).json({ success: false, message: "Email address is required." });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      return res.status(400).json({ success: false, message: "Please provide a valid email format." });
+    }
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ success: false, message: "Password must be at least 6 characters long." });
+    }
+
+    if (confirmPassword !== undefined && password !== confirmPassword) {
+      return res.status(400).json({ success: false, message: "Passwords do not match." });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+
+    // Check duplicate email
+    const existing = await User.findOne({ email: cleanEmail });
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: "An account with this email address already exists. Please Sign In."
+      });
+    }
+
+    // Format phone if provided
+    let formattedPhone = "";
+    if (phoneNumber) {
+      const rawPhone = String(phoneNumber).replace(/\D/g, "");
+      const phone10 = rawPhone.length > 10 ? rawPhone.slice(-10) : rawPhone;
+      if (phone10.length === 10) {
+        formattedPhone = `+91${phone10}`;
+        const existingPhone = await User.findOne({
+          $or: [{ phoneNumber: formattedPhone }, { phoneNumber: phone10 }]
+        });
+        if (existingPhone) {
+          return res.status(400).json({
+            success: false,
+            message: "An account with this mobile number already exists. Please Sign In."
+          });
+        }
+      }
+    }
+
+    // Hash password with bcrypt
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const newUser = new User({
+      firstName: fName,
+      lastName: lName,
+      name: fullName || (fName ? `${fName} ${lName}`.trim() : "Investor"),
+      email: cleanEmail,
+      phoneNumber: formattedPhone || undefined,
+      passwordHash: passwordHash,
+      annualIncome: 500000,
+      monthlyBudget: 30000,
+      monthlyExpense: 20000,
+      savings: 50000,
+      riskTolerance: "Medium",
+      expenses: [],
+      goals: [],
+      budgetBreakdown: { needs: 50, wants: 20, savings: 15, investments: 10, emergencyFund: 5 },
+      notificationPreferences: { emailAlerts: true, budgetThresholds: 80 }
+    });
+
+    await newUser.save();
+
+    const token = generateAuthToken(newUser);
+    const sanitized = sanitizeUser(newUser);
+
+    res.status(201).json({
+      success: true,
+      token,
+      user: sanitized,
+      message: "Account registered successfully!"
+    });
+  } catch (err) {
+    console.error("register error:", err);
+    res.status(500).json({ success: false, message: err.message || "Failed to register account." });
+  }
+});
+
+// ==========================================
+// 2. AUTHENTICATION: Sign In / Login
+// ==========================================
+const handleLogin = async (req, res) => {
+  try {
+    const { identifier, email, phoneNumber, password } = req.body;
+    const loginIdentifier = identifier || email || phoneNumber;
+
+    if (!loginIdentifier || !String(loginIdentifier).trim()) {
+      return res.status(400).json({ success: false, message: "Please enter your registered Email or Mobile Number." });
+    }
+    if (!password) {
+      return res.status(400).json({ success: false, message: "Please enter your password." });
+    }
+
+    const cleanInput = String(loginIdentifier).trim();
+    const rawDigits = cleanInput.replace(/\D/g, "");
+    const phone10 = rawDigits.length > 10 ? rawDigits.slice(-10) : rawDigits;
+    const formattedPhone = phone10.length === 10 ? `+91${phone10}` : cleanInput;
+
+    // Rate-limit failed sign in attempts per identifier
+    const rateCheck = checkRateLimit(`login_${cleanInput.toLowerCase()}`, 10, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return res.status(429).json({ success: false, message: rateCheck.message });
+    }
+
+    // Find user by email OR phone number (including +passwordHash)
+    const user = await User.findOne({
+      $or: [
+        { email: cleanInput.toLowerCase() },
+        { phoneNumber: cleanInput },
+        { phoneNumber: formattedPhone },
+        ...(phone10.length === 10 ? [{ phoneNumber: phone10 }] : [])
+      ]
+    }).select('+passwordHash');
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "No account found matching this email or mobile number. Please check your details or Sign Up."
+      });
+    }
+
+    if (!user.passwordHash) {
+      return res.status(400).json({
+        success: false,
+        message: "This account was created via quick phone verification. Please sign in using Phone OTP or set up a password in your Profile."
+      });
+    }
+
+    // Compare bcrypt password hash
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: "Incorrect password. Please verify your password and try again."
+      });
+    }
+
+    // Generate JWT token
+    const token = generateAuthToken(user);
+    const sanitized = sanitizeUser(user);
+
+    res.status(200).json({
+      success: true,
+      token,
+      user: sanitized,
+      phoneNumber: user.phoneNumber,
+      email: user.email,
+      message: "Signed in successfully!"
+    });
+  } catch (err) {
+    console.error("signin error:", err);
+    res.status(500).json({ success: false, message: err.message || "Failed to sign in." });
+  }
+};
+
+app.post('/api/auth/login', handleLogin);
+app.post('/api/auth/signin', handleLogin);
+
+// ==========================================
+// 3. AUTHENTICATION: Forgot Password & Reset Flow
+// ==========================================
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ success: false, message: "Please enter your registered email address." });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const tokenResult = await createPasswordResetToken(cleanEmail);
+
+    if (!tokenResult.success) {
+      return res.status(404).json({
+        success: false,
+        message: "No account found with this email address. Please check your spelling or Sign Up."
+      });
+    }
+
+    const clientUrl = (process.env.CLIENT_URL || "http://localhost:8080").replace(/\/+$/, "");
+    const resetUrl = `${clientUrl}/reset-password/${tokenResult.resetToken}`;
+
+    const mailHtml = `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #070b14; color: #f8fafc; padding: 30px; border-radius: 16px; border: 1px solid #1e293b;">
+        <div style="text-align: center; margin-bottom: 25px;">
+          <h1 style="color: #38bdf8; margin: 0; font-size: 24px; font-weight: 800;">Arua Finance</h1>
+          <p style="color: #94a3b8; font-size: 12px; margin-top: 4px;">Smarter Money. Powered by AI.</p>
+        </div>
+        
+        <h2 style="color: #ffffff; font-size: 18px; margin-bottom: 15px;">Reset Your Password</h2>
+        <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6;">
+          Hi ${tokenResult.user.name || "Investor"},
+        </p>
+        <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6;">
+          We received a request to reset the password for your Arua Finance account. Click the button below to choose a new password. This link is valid for <strong>1 hour</strong>.
+        </p>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetUrl}" style="background: linear-gradient(135deg, #2563eb, #7c3aed); color: #ffffff; padding: 14px 30px; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 14px; display: inline-block; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);">
+            Reset Account Password
+          </a>
+        </div>
+        
+        <p style="color: #94a3b8; font-size: 12px; line-height: 1.5;">
+          If the button does not work, copy and paste this link in your browser:<br/>
+          <a href="${resetUrl}" style="color: #38bdf8; word-break: break-all;">${resetUrl}</a>
+        </p>
+        
+        <hr style="border: 0; border-top: 1px solid #1e293b; margin: 25px 0;" />
+        
+        <p style="color: #64748b; font-size: 11px; text-align: center; margin: 0;">
+          If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.
+        </p>
+      </div>
+    `;
+
+    // Attempt to send email via Nodemailer
+    let emailSent = false;
+    try {
+      const mailRes = await SendMail({
+        email: cleanEmail,
+        subject: "Arua Finance — Password Reset Request",
+        html: mailHtml
+      });
+      emailSent = mailRes && mailRes.success;
+    } catch (mailErr) {
+      console.warn("Nodemailer dispatch warning:", mailErr.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      emailSent,
+      resetToken: process.env.NODE_ENV !== "production" ? tokenResult.resetToken : undefined,
+      resetUrl: process.env.NODE_ENV !== "production" ? resetUrl : undefined,
+      message: "Password reset link has been dispatched to your email address."
+    });
+  } catch (err) {
+    console.error("forgot-password error:", err);
+    res.status(500).json({ success: false, message: err.message || "Failed to process password reset." });
+  }
+});
+
+app.post('/api/auth/reset-password/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password, confirmPassword } = req.body;
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ success: false, message: "Password must be at least 6 characters long." });
+    }
+
+    if (confirmPassword !== undefined && password !== confirmPassword) {
+      return res.status(400).json({ success: false, message: "Passwords do not match." });
+    }
+
+    const result = await resetPasswordWithToken(token, password);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    res.status(200).json(result);
+  } catch (err) {
+    console.error("reset-password error:", err);
+    res.status(500).json({ success: false, message: err.message || "Failed to reset password." });
+  }
+});
+
+app.post('/api/auth/change-password', async (req, res) => {
+  try {
+    const { identifier, email, phone, currentPassword, newPassword, confirmPassword } = req.body;
+    const userIdentifier = identifier || email || phone;
+
+    if (!userIdentifier) {
+      return res.status(400).json({ success: false, message: "User identifier is required." });
+    }
+    if (!currentPassword) {
+      return res.status(400).json({ success: false, message: "Current password is required." });
+    }
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: "New password must be at least 6 characters long." });
+    }
+    if (confirmPassword !== undefined && newPassword !== confirmPassword) {
+      return res.status(400).json({ success: false, message: "New passwords do not match." });
+    }
+
+    const result = await changeUserPassword(userIdentifier, currentPassword, newPassword);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    res.status(200).json(result);
+  } catch (err) {
+    console.error("change-password error:", err);
+    res.status(500).json({ success: false, message: err.message || "Failed to change password." });
+  }
+});
+
+// ==========================================
+// 4. AUTHENTICATION: 2Factor SMS OTP Handlers
 // ==========================================
 app.post('/api/auth/signup-otp', async (req, res) => {
   try {
@@ -192,7 +523,7 @@ app.post('/api/auth/signup-otp', async (req, res) => {
       return res.status(429).json({ success: false, message: rateCheck.message });
     }
 
-    // DO NOT CREATE THE USER YET - Send 2Factor SMS OTP
+    // Send 2Factor SMS OTP
     const otpResult = await TwoFactorService.sendOtp(phone10);
     if (!otpResult.success) {
       return res.status(400).json(otpResult);
@@ -212,9 +543,6 @@ app.post('/api/auth/signup-otp', async (req, res) => {
   }
 });
 
-// ==========================================
-// 2. SIGN UP: Step 2 - Verify OTP & Create User
-// ==========================================
 app.post('/api/auth/signup-verify', async (req, res) => {
   try {
     const { firstName, lastName, email, phoneNumber, password, sessionId, otp } = req.body;
@@ -262,8 +590,13 @@ app.post('/api/auth/signup-verify', async (req, res) => {
       passwordHash: passwordHash,
       annualIncome: 500000,
       monthlyBudget: 30000,
+      monthlyExpense: 20000,
+      savings: 50000,
       riskTolerance: "Medium",
-      expenses: []
+      expenses: [],
+      goals: [],
+      budgetBreakdown: { needs: 50, wants: 20, savings: 15, investments: 10, emergencyFund: 5 },
+      notificationPreferences: { emailAlerts: true, budgetThresholds: 80 }
     });
 
     await newUser.save();
@@ -285,84 +618,6 @@ app.post('/api/auth/signup-verify', async (req, res) => {
   }
 });
 
-// ==========================================
-// 3. SIGN IN: Email or Phone + Password
-// ==========================================
-app.post('/api/auth/signin', async (req, res) => {
-  try {
-    const { identifier, password } = req.body;
-
-    if (!identifier || !identifier.trim()) {
-      return res.status(400).json({ success: false, message: "Please enter your registered Email or Mobile Number." });
-    }
-    if (!password) {
-      return res.status(400).json({ success: false, message: "Please enter your password." });
-    }
-
-    const cleanInput = identifier.trim();
-    const rawDigits = cleanInput.replace(/\D/g, "");
-    const phone10 = rawDigits.length > 10 ? rawDigits.slice(-10) : rawDigits;
-    const formattedPhone = phone10.length === 10 ? `+91${phone10}` : cleanInput;
-
-    // Rate-limit failed sign in attempts per identifier
-    const rateCheck = checkRateLimit(`login_${cleanInput.toLowerCase()}`, 10, 5 * 60 * 1000);
-    if (!rateCheck.allowed) {
-      return res.status(429).json({ success: false, message: rateCheck.message });
-    }
-
-    // Find user by email OR phone number (including +passwordHash)
-    const user = await User.findOne({
-      $or: [
-        { email: cleanInput.toLowerCase() },
-        { phoneNumber: cleanInput },
-        { phoneNumber: formattedPhone },
-        ...(phone10.length === 10 ? [{ phoneNumber: phone10 }] : [])
-      ]
-    }).select('+passwordHash');
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "No account found matching this email or mobile number. Please check your details or Sign Up."
-      });
-    }
-
-    if (!user.passwordHash) {
-      return res.status(400).json({
-        success: false,
-        message: "This account was created via quick phone verification. Please sign in using Phone OTP or set up a password in your Profile."
-      });
-    }
-
-    // Compare bcrypt password hash
-    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
-    if (!isPasswordValid) {
-      return res.status(401).json({
-        success: false,
-        message: "Incorrect password. Please verify your password and try again."
-      });
-    }
-
-    // Generate JWT token
-    const token = generateAuthToken(user);
-    const sanitized = sanitizeUser(user);
-
-    res.status(200).json({
-      success: true,
-      token,
-      user: sanitized,
-      phoneNumber: user.phoneNumber,
-      message: "Signed in successfully!"
-    });
-  } catch (err) {
-    console.error("signin error:", err);
-    res.status(500).json({ success: false, message: err.message || "Failed to sign in." });
-  }
-});
-
-// ==========================================
-// 4. Quick Phone OTP Login (Preserved)
-// ==========================================
 app.post('/api/auth/send-otp', async (req, res) => {
   try {
     const rawPhone = req.body.phoneNumber || req.body.phone;
@@ -463,7 +718,7 @@ app.post('/api/auth/resend-otp', async (req, res) => {
 });
 
 // ==========================================
-// 5. Existing Profile & User CRUD Endpoints
+// 5. User Profile CRUD Endpoints
 // ==========================================
 app.post('/api/user/create', async (req, res) => {
   try {
@@ -504,7 +759,112 @@ app.post('/api/user/update', async (req, res) => {
 });
 
 // ==========================================
-// 6. Financial Goal Management Endpoints
+// 6. Expense Management Endpoints (With Budget Alerting)
+// ==========================================
+app.get('/api/user/expenses', async (req, res) => {
+  try {
+    const identifier = req.query.identifier || req.query.phone || req.query.email;
+    if (!identifier) return res.status(400).json({ error: "User identifier is required" });
+    const user = await fetchUserByEmail(identifier);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json({ success: true, expenses: user.expenses || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/user/expenses', async (req, res) => {
+  try {
+    const { identifier, phone, email, description, amount, category, paymentMethod, date } = req.body;
+    const userIdentifier = identifier || phone || email;
+    if (!userIdentifier) return res.status(400).json({ error: "User identifier is required" });
+    if (!description || !amount) {
+      return res.status(400).json({ error: "Description and amount are required" });
+    }
+
+    const { user, newExpense } = await addExpenseToUser(userIdentifier, {
+      description,
+      amount,
+      category,
+      paymentMethod,
+      date
+    });
+
+    // Check budget alert threshold
+    const monthlyBudget = Number(user.monthlyBudget) || 0;
+    const totalExpenses = (user.expenses || []).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const budgetBurn = monthlyBudget > 0 ? (totalExpenses / monthlyBudget) * 100 : 0;
+    const alertThreshold = user.notificationPreferences?.budgetThresholds || 80;
+    const emailAlertsEnabled = user.notificationPreferences?.emailAlerts !== false;
+
+    // Check 24-hour spam prevention on budget emails
+    const now = Date.now();
+    const lastAlert = user.lastBudgetAlertSent ? new Date(user.lastBudgetAlertSent).getTime() : 0;
+    const isCooldownOver = now - lastAlert > 24 * 60 * 60 * 1000;
+
+    if (emailAlertsEnabled && budgetBurn >= alertThreshold && isCooldownOver && user.email) {
+      try {
+        await SendMail({
+          email: user.email,
+          subject: `Arua Finance Budget Alert: You have used ${budgetBurn.toFixed(0)}% of your monthly budget`,
+          html: `
+            <div style="font-family: Arial, sans-serif; background-color: #070b14; color: #f8fafc; padding: 25px; border-radius: 14px;">
+              <h2 style="color: #f43f5e; margin-top: 0;">⚠️ Budget Threshold Warning</h2>
+              <p>Hi ${user.name || "Investor"},</p>
+              <p>Your total logged expenses have reached <strong>${formatINR(totalExpenses)}</strong>, which is <strong>${budgetBurn.toFixed(1)}%</strong> of your planned monthly budget (${formatINR(monthlyBudget)}).</p>
+              <p>Recent transaction: <strong>${newExpense.description}</strong> (${formatINR(newExpense.amount)})</p>
+              <p>Log in to Arua Finance to inspect category breakdowns and optimize discretionary spending.</p>
+              <p style="color: #64748b; font-size: 11px; margin-top: 20px;">— Arua Finance AI Engine • Smarter Money. Powered by AI.</p>
+            </div>
+          `
+        });
+        user.lastBudgetAlertSent = new Date();
+        await user.save();
+      } catch (mailErr) {
+        console.warn("Budget alert email error:", mailErr.message);
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      expense: newExpense,
+      user: sanitizeUser(user),
+      expenses: user.expenses
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/user/expenses/:expenseId', async (req, res) => {
+  try {
+    const { expenseId } = req.params;
+    const { identifier, phone, email, ...updates } = req.body;
+    const userIdentifier = identifier || phone || email;
+    if (!userIdentifier) return res.status(400).json({ error: "User identifier is required" });
+
+    const updatedUser = await updateExpenseInUser(userIdentifier, expenseId, updates);
+    res.json({ success: true, user: sanitizeUser(updatedUser), expenses: updatedUser.expenses });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/user/expenses/:expenseId', async (req, res) => {
+  try {
+    const { expenseId } = req.params;
+    const userIdentifier = req.query.identifier || req.query.phone || req.query.email || req.body.identifier;
+    if (!userIdentifier) return res.status(400).json({ error: "User identifier is required" });
+
+    const updatedUser = await deleteExpenseFromUser(userIdentifier, expenseId);
+    res.json({ success: true, user: sanitizeUser(updatedUser), expenses: updatedUser.expenses });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 7. Financial Goal Management Endpoints
 // ==========================================
 app.post('/api/user/goals', async (req, res) => {
   try {
@@ -550,7 +910,7 @@ app.delete('/api/user/goals/:goalId', async (req, res) => {
 });
 
 // ==========================================
-// 7. AI Wealth Intelligence Endpoints
+// 8. AI Wealth Intelligence Endpoints
 // ==========================================
 app.post('/api/ai/coach', async (req, res) => {
   try {
@@ -597,6 +957,22 @@ app.get('/api/ai/report', async (req, res) => {
   } catch (err) {
     console.error("AI Report endpoint error:", err);
     res.status(500).json({ error: err.message || "Failed to generate monthly report" });
+  }
+});
+
+app.post('/api/ai/recommendations', async (req, res) => {
+  try {
+    const { identifier, phone, email, userData } = req.body;
+    let user = userData;
+    const userIdentifier = identifier || phone || email;
+    if (!user && userIdentifier) {
+      user = await fetchUserByEmail(userIdentifier);
+    }
+    const cards = await AIService.generateDynamicRecommendations(user || {});
+    res.json({ success: true, recommendations: cards });
+  } catch (err) {
+    console.error("AI Recommendations error:", err);
+    res.status(500).json({ error: err.message || "Failed to generate recommendations" });
   }
 });
 

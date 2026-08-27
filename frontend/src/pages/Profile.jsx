@@ -10,11 +10,25 @@ import UpdateUserDataFunc from "../helper/UpdateUserDataFunc";
 import { formatINR } from "@/helper/formatters";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { User, ShieldCheck, Sparkles, ArrowRight, CheckCircle2, Zap, IndianRupee } from "lucide-react";
+import {
+  User,
+  ShieldCheck,
+  Sparkles,
+  ArrowRight,
+  CheckCircle2,
+  Zap,
+  IndianRupee,
+  Lock,
+  Eye,
+  EyeOff,
+  Bell,
+  Loader2,
+  KeyRound
+} from "lucide-react";
 import NotFound from "./NotFound";
 
 const Profile = () => {
-  const { LoggedInUserData, setLoggedInUserData } = useAuth();
+  const { LoggedInUserData, setLoggedInUserData, changePassword } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -23,8 +37,21 @@ const Profile = () => {
     annualIncome: "",
     age: 24,
     monthlyBudget: "",
-    riskTolerance: "Medium"
+    riskTolerance: "Medium",
+    emailAlerts: true,
+    budgetThresholds: 80
   });
+
+  const [isSubmittingProfile, setIsSubmittingProfile] = useState(false);
+
+  // Password Change State
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: ""
+  });
+  const [showPassword, setShowPassword] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   useEffect(() => {
     if (LoggedInUserData) {
@@ -33,13 +60,16 @@ const Profile = () => {
         age: LoggedInUserData.age || 24,
         annualIncome: LoggedInUserData.annualIncome || "",
         monthlyBudget: LoggedInUserData.monthlyBudget || "",
-        riskTolerance: LoggedInUserData.riskTolerance || "Medium"
+        riskTolerance: LoggedInUserData.riskTolerance || "Medium",
+        emailAlerts: LoggedInUserData.notificationPreferences?.emailAlerts !== false,
+        budgetThresholds: LoggedInUserData.notificationPreferences?.budgetThresholds || 80
       });
     }
   }, [LoggedInUserData]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmittingProfile(true);
 
     try {
       const updatedData = {
@@ -48,19 +78,23 @@ const Profile = () => {
         annualIncome: Number(formData.annualIncome) || 0,
         age: Number(formData.age) || 24,
         monthlyBudget: Number(formData.monthlyBudget) || 0,
-        riskTolerance: formData.riskTolerance || "Medium"
+        riskTolerance: formData.riskTolerance || "Medium",
+        notificationPreferences: {
+          emailAlerts: formData.emailAlerts,
+          budgetThresholds: Number(formData.budgetThresholds) || 80
+        }
       };
 
       const result = await UpdateUserDataFunc(updatedData);
 
-      setLoggedInUserData(result);
+      if (result) {
+        setLoggedInUserData(result);
+      }
 
       toast({
         title: "Profile updated successfully!",
         description: "Your financial parameters and AI risk profile have been synced with Atlas.",
       });
-
-      navigate("/dashboard");
     } catch (error) {
       console.error("Failed to update user:", error);
       toast({
@@ -68,6 +102,74 @@ const Profile = () => {
         description: "Could not save your data to the cloud. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      setIsSubmittingProfile(false);
+    }
+  };
+
+  const handlePasswordChangeSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!passwordForm.currentPassword) {
+      toast({
+        title: "Current password required",
+        description: "Please enter your current password.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!passwordForm.newPassword || passwordForm.newPassword.length < 6) {
+      toast({
+        title: "Weak password",
+        description: "New password must be at least 6 characters long.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast({
+        title: "Passwords mismatch",
+        description: "New password and confirmation do not match.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      const res = await changePassword(
+        passwordForm.currentPassword,
+        passwordForm.newPassword,
+        passwordForm.confirmPassword
+      );
+
+      if (res && res.success) {
+        toast({
+          title: "Password updated!",
+          description: "Your account security credentials were updated successfully.",
+        });
+        setPasswordForm({
+          currentPassword: "",
+          newPassword: "",
+          confirmPassword: ""
+        });
+      } else {
+        toast({
+          title: "Failed to update password",
+          description: res?.message || "Please check your current password.",
+          variant: "destructive"
+        });
+      }
+    } catch (err) {
+      toast({
+        title: "Error updating password",
+        description: err.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsChangingPassword(false);
     }
   };
 
@@ -97,6 +199,7 @@ const Profile = () => {
             </p>
           </div>
 
+          {/* Profile Details Card */}
           <Card className="arua-card rounded-2xl border-slate-800 shadow-2xl overflow-hidden">
             <CardHeader className="pb-4 border-b border-slate-800/80">
               <div className="flex items-center justify-between">
@@ -104,7 +207,9 @@ const Profile = () => {
                   <User className="w-5 h-5 text-cyan-400" />
                   <span>Investor Financial Identity</span>
                 </CardTitle>
-                <span className="text-xs text-slate-400 font-mono">{LoggedInUserData.email}</span>
+                <span className="text-xs text-slate-400 font-mono">
+                  {LoggedInUserData.email || LoggedInUserData.phoneNumber}
+                </span>
               </div>
             </CardHeader>
 
@@ -119,6 +224,7 @@ const Profile = () => {
                     value={formData.name}
                     onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
                     required
+                    disabled={isSubmittingProfile}
                     className="rounded-xl bg-slate-950/70 border-slate-800 text-white focus-visible:ring-blue-500 h-10"
                   />
                 </div>
@@ -135,6 +241,7 @@ const Profile = () => {
                       value={formData.age}
                       onChange={(e) => setFormData((prev) => ({ ...prev, age: e.target.value }))}
                       required
+                      disabled={isSubmittingProfile}
                       className="rounded-xl bg-slate-950/70 border-slate-800 text-white focus-visible:ring-blue-500 h-10"
                     />
                   </div>
@@ -171,6 +278,7 @@ const Profile = () => {
                       value={formData.annualIncome}
                       onChange={(e) => setFormData((prev) => ({ ...prev, annualIncome: e.target.value }))}
                       required
+                      disabled={isSubmittingProfile}
                       className="rounded-xl bg-slate-950/70 border-slate-800 text-white focus-visible:ring-blue-500 h-10"
                     />
                   </div>
@@ -186,7 +294,27 @@ const Profile = () => {
                       value={formData.monthlyBudget}
                       onChange={(e) => setFormData((prev) => ({ ...prev, monthlyBudget: e.target.value }))}
                       required
+                      disabled={isSubmittingProfile}
                       className="rounded-xl bg-slate-950/70 border-slate-800 text-white focus-visible:ring-blue-500 h-10"
+                    />
+                  </div>
+                </div>
+
+                {/* Notification Preferences */}
+                <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <Bell className="w-4 h-4 text-cyan-400" />
+                      <div>
+                        <p className="text-xs font-bold text-white">Budget Threshold Email Alerts</p>
+                        <p className="text-[11px] text-slate-400">Receive an email warning when your expenses reach your budget limit.</p>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={formData.emailAlerts}
+                      onChange={(e) => setFormData({ ...formData, emailAlerts: e.target.checked })}
+                      className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
                     />
                   </div>
                 </div>
@@ -204,10 +332,111 @@ const Profile = () => {
 
                 <Button
                   type="submit"
-                  className="w-full gradient-bg text-white font-bold rounded-xl py-3 shadow-lg shadow-blue-500/25 hover:scale-102 transition-all text-sm border border-blue-400/30"
+                  disabled={isSubmittingProfile}
+                  className="w-full gradient-bg text-white font-bold rounded-xl py-3 shadow-lg shadow-blue-500/25 hover:scale-102 transition-all text-sm border border-blue-400/30 flex items-center justify-center space-x-2"
                 >
-                  Save Profile & Go to Dashboard
-                  <ArrowRight className="w-4 h-4 ml-2" />
+                  {isSubmittingProfile ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-cyan-300" />
+                      <span>Saving Calibration...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Save Profile Settings</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Change Password Card */}
+          <Card className="arua-card rounded-2xl border-slate-800 shadow-2xl overflow-hidden">
+            <CardHeader className="pb-4 border-b border-slate-800/80">
+              <CardTitle className="text-base font-bold flex items-center space-x-2 text-white">
+                <KeyRound className="w-5 h-5 text-cyan-400" />
+                <span>Security & Password Management</span>
+              </CardTitle>
+              <CardDescription className="text-xs text-slate-400">
+                Update your account password to maintain maximum account security.
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="p-6">
+              <form onSubmit={handlePasswordChangeSubmit} className="space-y-4 text-xs">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-slate-300">Current Password</Label>
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={passwordForm.currentPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                    required
+                    disabled={isChangingPassword}
+                    className="rounded-xl bg-slate-950/70 border-slate-800 text-white h-10 text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-300">New Password (min 6 chars)</Label>
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={passwordForm.newPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                      required
+                      disabled={isChangingPassword}
+                      className="rounded-xl bg-slate-950/70 border-slate-800 text-white h-10 text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-300">Confirm New Password</Label>
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={passwordForm.confirmPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                      required
+                      disabled={isChangingPassword}
+                      className="rounded-xl bg-slate-950/70 border-slate-800 text-white h-10 text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-[11px] text-slate-400 hover:text-cyan-300 flex items-center space-x-1"
+                  >
+                    {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    <span>{showPassword ? "Hide Passwords" : "Show Passwords"}</span>
+                  </button>
+
+                  <Link to="/forgot-password" className="text-[11px] text-cyan-400 hover:underline">
+                    Forgot Current Password?
+                  </Link>
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={isChangingPassword || !passwordForm.currentPassword || !passwordForm.newPassword}
+                  className="w-full gradient-bg text-white font-bold rounded-xl py-2.5 shadow-lg shadow-blue-500/25 hover:scale-102 transition-all text-xs border border-blue-400/30 flex items-center justify-center space-x-2 mt-2"
+                >
+                  {isChangingPassword ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-300" />
+                      <span>Updating Password...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>Update Account Password</span>
+                    </>
+                  )}
                 </Button>
               </form>
             </CardContent>

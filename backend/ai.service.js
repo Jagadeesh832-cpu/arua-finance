@@ -275,4 +275,110 @@ Provide 3 numbered, concrete, highly actionable recommendations for next month.
       aiActionPlan: aiInsightsText
     };
   }
+
+  /**
+   * Generates dynamic, personalized AI recommendation cards based on real user data
+   */
+  static async generateDynamicRecommendations(user) {
+    const health = this.calculateHealthScore(user);
+    const annualIncome = Number(user.annualIncome) || 500000;
+    const monthlyIncome = annualIncome / 12;
+    const monthlyBudget = Number(user.monthlyBudget) || 30000;
+    const savings = Number(user.savings) || 50000;
+    const expenses = user.expenses || [];
+    const totalExpenses = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const riskTolerance = user.riskTolerance || "Medium";
+
+    // Category breakdown
+    const categoryTotals = {};
+    expenses.forEach((e) => {
+      const cat = e.category || "Other";
+      categoryTotals[cat] = (categoryTotals[cat] || 0) + (Number(e.amount) || 0);
+    });
+    const sortedCategories = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]);
+    const topCategory = sortedCategories[0] || null;
+
+    const cards = [];
+
+    // 1. Emergency Fund Card
+    const target6Months = (Number(user.monthlyExpense) || 20000) * 6;
+    const emergencyShortfall = Math.max(0, target6Months - savings);
+    if (emergencyShortfall > 0) {
+      cards.push({
+        type: "Emergency Reserve Fund",
+        description: `Build a 6-month liquid cushion of ${formatINR(target6Months)}. Current shortfall: ${formatINR(emergencyShortfall)}.`,
+        allocation: "15-20% of monthly income",
+        risk: "Low",
+        color: "bg-emerald-600",
+        priority: "High",
+        aiAdvice: `Prioritize liquid savings in high-interest savings accounts or sweep-in FDs until your balance reaches ${formatINR(target6Months)}.`
+      });
+    } else {
+      cards.push({
+        type: "Emergency Reserve Shield",
+        description: `Your emergency fund of ${formatINR(savings)} is fully funded for 6+ months of living expenses.`,
+        allocation: "Maintain reserve",
+        risk: "Low",
+        color: "bg-emerald-600",
+        priority: "Low",
+        aiAdvice: "Emergency readiness is optimal! You can deploy remaining monthly surpluses into higher-yield equity SIPs."
+      });
+    }
+
+    // 2. SIP Portfolio Card
+    const recommendedSip = Math.round(monthlyIncome * (riskTolerance === "High" ? 0.30 : riskTolerance === "Medium" ? 0.20 : 0.15));
+    cards.push({
+      type: "Systematic Investment Plan (SIP)",
+      description: `Invest ${formatINR(recommendedSip)}/month in diversified index and flexi-cap mutual funds.`,
+      allocation: `${riskTolerance === "High" ? "30%" : riskTolerance === "Medium" ? "20%" : "15%"} of monthly income`,
+      risk: riskTolerance,
+      color: "bg-blue-600",
+      priority: "High",
+      aiAdvice: `A recurring monthly SIP of ${formatINR(recommendedSip)} at an estimated 12-14% CAGR can build a significant compounding corpus over 5-10 years.`
+    });
+
+    // 3. Tax Saving Card (80C / ELSS / PPF)
+    cards.push({
+      type: "Tax-Saving ELSS & PPF",
+      description: `Allocate up to ${formatINR(150000)} annually across Section 80C instruments for tax deduction & wealth creation.`,
+      allocation: "₹12,500 / month",
+      risk: "Medium",
+      color: "bg-cyan-600",
+      priority: "Medium",
+      aiAdvice: "If opting for the Old Tax Regime, maxing out your Section 80C limit saves up to ₹46,800 in taxes at the 30% slab."
+    });
+
+    // 4. Overspending Alert Card (if any top category exceeds 35% of income or budget is exceeded)
+    if (topCategory && topCategory[1] > monthlyIncome * 0.35) {
+      cards.push({
+        type: `Spending Discipline: ${topCategory[0]}`,
+        description: `${topCategory[0]} spending (${formatINR(topCategory[1])}) accounts for a large portion of your monthly cash flow.`,
+        allocation: `Aim to cap under ${formatINR(Math.round(monthlyIncome * 0.25))}`,
+        risk: "Low",
+        color: "bg-amber-600",
+        priority: "High",
+        aiAdvice: `Trimming ${topCategory[0]} by 15% will free up approximately ${formatINR(Math.round(topCategory[1] * 0.15))} every month for your financial goals.`
+      });
+    }
+
+    // 5. Goal Acceleration Card
+    const goals = user.goals || [];
+    if (goals.length > 0) {
+      const activeGoal = goals[0];
+      const target = Number(activeGoal.targetAmount) || 1;
+      const curr = Number(activeGoal.currentAmount) || 0;
+      const gap = Math.max(0, target - curr);
+      cards.push({
+        type: `Goal Momentum: ${activeGoal.name}`,
+        description: `${formatINR(curr)} saved of ${formatINR(target)} target (${Math.min(100, Math.round((curr / target) * 100))}% complete).`,
+        allocation: activeGoal.monthlyContribution ? `${formatINR(activeGoal.monthlyContribution)}/mo` : "Custom SIP",
+        risk: "Medium",
+        color: "bg-purple-600",
+        priority: "Medium",
+        aiAdvice: gap > 0 ? `To achieve this milestone on time, contribute consistently each month to close the ${formatINR(gap)} remaining gap.` : "Milestone achieved!"
+      });
+    }
+
+    return cards;
+  }
 }

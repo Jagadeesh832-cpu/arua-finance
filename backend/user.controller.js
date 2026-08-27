@@ -1,6 +1,7 @@
 import { User } from './user.model.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'arua_finance_jwt_secret_key_secure_2026';
 
@@ -23,6 +24,8 @@ export function sanitizeUser(user) {
   if (!user) return null;
   const userObj = user.toObject ? user.toObject() : { ...user };
   delete userObj.passwordHash;
+  delete userObj.resetPasswordToken;
+  delete userObj.resetPasswordExpires;
   delete userObj.__v;
   return userObj;
 }
@@ -122,7 +125,7 @@ export async function updateUserDetails(identifier, updates) {
     'firstName', 'lastName', 'name', 'picture', 'email', 'phoneNumber', 'age',
     'annualIncome', 'monthlyExpense', 'savings', 'investmentHorizon',
     'riskTolerance', 'financialGoal', 'preferredAssets', 'expenses', 'monthlyBudget',
-    'goals', 'budgetBreakdown'
+    'goals', 'budgetBreakdown', 'notificationPreferences', 'lastBudgetAlertSent'
   ];
 
   const filteredUpdates = {};
@@ -154,6 +157,141 @@ export async function updateUserDetails(identifier, updates) {
     { $set: filteredUpdates },
     { new: true, upsert: true }
   );
+}
+
+// Create cryptographically secure Password Reset Token
+export async function createPasswordResetToken(email) {
+  if (!email) throw new Error("Email is required");
+  const cleanEmail = email.toLowerCase().trim();
+  const user = await User.findOne({ email: cleanEmail });
+  if (!user) {
+    return { success: false, message: "No account found with this email address." };
+  }
+
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+  user.resetPasswordToken = tokenHash;
+  user.resetPasswordExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour valid
+  await user.save();
+
+  return {
+    success: true,
+    user,
+    resetToken
+  };
+}
+
+// Reset Password with Token
+export async function resetPasswordWithToken(token, newPassword) {
+  if (!token) throw new Error("Reset token is required");
+  if (!newPassword || newPassword.length < 6) throw new Error("Password must be at least 6 characters");
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+  const user = await User.findOne({
+    resetPasswordToken: tokenHash,
+    resetPasswordExpires: { $gt: new Date() }
+  }).select('+passwordHash +resetPasswordToken +resetPasswordExpires');
+
+  if (!user) {
+    return { success: false, message: "Password reset token is invalid or has expired. Please request a new link." };
+  }
+
+  user.passwordHash = await bcrypt.hash(newPassword, 10);
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpires = undefined;
+  await user.save();
+
+  return {
+    success: true,
+    user: sanitizeUser(user),
+    message: "Password has been successfully reset. You can now log in."
+  };
+}
+
+// Change User Password (authenticated)
+export async function changeUserPassword(identifier, currentPassword, newPassword) {
+  const user = await User.findOne({
+    $or: [
+      { email: String(identifier).toLowerCase().trim() },
+      { phoneNumber: String(identifier).trim() },
+      ...(String(identifier).match(/^[0-9a-fA-F]{24}$/) ? [{ _id: identifier }] : [])
+    ]
+  }).select('+passwordHash');
+
+  if (!user) throw new Error("User not found");
+  if (!user.passwordHash) throw new Error("Account has no existing password set. Please use password reset.");
+
+  const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!isValid) {
+    return { success: false, message: "Current password does not match." };
+  }
+
+  if (!newPassword || newPassword.length < 6) {
+    return { success: false, message: "New password must be at least 6 characters." };
+  }
+
+  user.passwordHash = await bcrypt.hash(newPassword, 10);
+  await user.save();
+
+  return { success: true, message: "Password updated successfully!" };
+}
+
+// ==========================================
+// Expense CRUD Operations
+// ==========================================
+export async function addExpenseToUser(identifier, expenseData) {
+  const user = await findUserByIdentifier(identifier);
+  if (!user) throw new Error("User not found");
+
+  const newExpense = {
+    _id: new mongoose.Types.ObjectId(),
+    description: expenseData.description,
+    amount: Number(expenseData.amount),
+    category: expenseData.category || "Other",
+    paymentMethod: expenseData.paymentMethod || "UPI",
+    date: expenseData.date ? new Date(expenseData.date) : new Date()
+  };
+
+  user.expenses = [newExpense, ...(user.expenses || [])];
+  await user.save();
+  return { user, newExpense };
+}
+
+export async function updateExpenseInUser(identifier, expenseId, updates) {
+  const user = await findUserByIdentifier(identifier);
+  if (!user) throw new Error("User not found");
+
+  const expenseIndex = (user.expenses || []).findIndex(
+    e => String(e._id) === String(expenseId) || String(e.id) === String(expenseId)
+  );
+
+  if (expenseIndex === -1) throw new Error("Expense record not found");
+
+  const exp = user.expenses[expenseIndex];
+  if (updates.description !== undefined) exp.description = updates.description;
+  if (updates.amount !== undefined) exp.amount = Number(updates.amount);
+  if (updates.category !== undefined) exp.category = updates.category;
+  if (updates.paymentMethod !== undefined) exp.paymentMethod = updates.paymentMethod;
+  if (updates.date !== undefined) exp.date = new Date(updates.date);
+
+  user.markModified('expenses');
+  await user.save();
+  return user;
+}
+
+export async function deleteExpenseFromUser(identifier, expenseId) {
+  const user = await findUserByIdentifier(identifier);
+  if (!user) throw new Error("User not found");
+
+  user.expenses = (user.expenses || []).filter(
+    e => String(e._id) !== String(expenseId) && String(e.id) !== String(expenseId)
+  );
+
+  user.markModified('expenses');
+  await user.save();
+  return user;
 }
 
 // Add a financial goal

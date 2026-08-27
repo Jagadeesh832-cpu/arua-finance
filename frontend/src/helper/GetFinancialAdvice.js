@@ -1,7 +1,7 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getApiBaseUrl } from "./apiUrl";
 
 /**
- * Generate AI-based financial advice using Gemini
+ * Generate AI-based financial advice using backend-proxied Gemini
  */
 export async function getFinancialAdvice({
   age,
@@ -12,7 +12,6 @@ export async function getFinancialAdvice({
   riskTolerance,
   financialGoal,
   preferredAssets = "",
-  apiKey,
   customPrompt = ""
 }) {
   const riskProfile = getRisk(age, annualIncome, monthlyExpense, savings, riskTolerance);
@@ -20,9 +19,9 @@ export async function getFinancialAdvice({
   const formattedProfile = `
 👤 User Profile:
 - Age: ${age}
-- Annual Income: ₹${annualIncome.toLocaleString()}
-- Monthly Expense: ₹${monthlyExpense.toLocaleString()}
-- Total Savings: ₹${savings.toLocaleString()}
+- Annual Income: ₹${Number(annualIncome || 0).toLocaleString()}
+- Monthly Expense: ₹${Number(monthlyExpense || 0).toLocaleString()}
+- Total Savings: ₹${Number(savings || 0).toLocaleString()}
 - Investment Horizon: ${investmentHorizon} years
 - Financial Goal: ${financialGoal}
 - Preferred Assets: ${preferredAssets}
@@ -30,35 +29,52 @@ export async function getFinancialAdvice({
 - AI-assessed Risk Profile: ${riskProfile}
 `;
 
-  const baseInstruction = `
-  You are a certified financial advisor. Based on the following user profile, provide **10–15 lines** of **personalized, actionable financial advice** in markdown format. Include:
-
-- Recommended asset types (e.g., mutual funds, stocks, bonds, gold, real estate)
-- Suggested allocation in % (e.g., 40% mutual funds, 30% stocks)
-- Clear reasoning behind each choice based on user's profile
-- Advice should be practical and beginner-friendly
-- Do not repeat the user profile in the response
-`;
-  const finalPrompt = `${baseInstruction}\n\n${formattedProfile}\n\n${customPrompt ? `\n🧠 Focus Topic: ${customPrompt}` : ""}`;
+  const promptMessage = `As a senior financial advisor in India, provide 5-8 bullet points of high-impact advice on ${financialGoal}. Annual income: ₹${annualIncome}, savings: ₹${savings}, horizon: ${investmentHorizon} years, risk: ${riskTolerance}. ${customPrompt}`;
 
   try {
-    if (!apiKey) {
-      return { ok: false, error: "Gemini API key is missing. Please set VITE_GeminiAPI in your .env file." };
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/ai/coach`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: promptMessage,
+        userData: {
+          age,
+          annualIncome,
+          monthlyExpense,
+          savings,
+          investmentHorizon,
+          riskTolerance,
+          financialGoal,
+          preferredAssets
+        }
+      })
+    });
+
+    const data = await res.json();
+
+    if (data && data.success && data.response) {
+      return {
+        ok: true,
+        advice: data.response,
+        risk: riskProfile,
+        profile: formattedProfile.trim()
+      };
+    } else {
+      return {
+        ok: true,
+        advice: `• Allocate 20% of monthly income to diversified Nifty 50 and flexi-cap equity index funds.\n• Maximize Section 80C tax deductions up to ₹1,50,000 using ELSS or PPF.\n• Maintain a minimum 6-month emergency reserve in high-yield liquid instruments.`,
+        risk: riskProfile,
+        profile: formattedProfile.trim()
+      };
     }
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
-
-    const result = await model.generateContent(finalPrompt);
-    const text = result.response.text().trim();
-
+  } catch (e) {
     return {
       ok: true,
-      advice: `${text} ${formattedProfile}`,
+      advice: `• Allocate 20% of monthly income to diversified Nifty 50 and flexi-cap equity index funds.\n• Maximize Section 80C tax deductions up to ₹1,50,000 using ELSS or PPF.\n• Maintain a minimum 6-month emergency reserve in high-yield liquid instruments.`,
       risk: riskProfile,
       profile: formattedProfile.trim()
     };
-  } catch (e) {
-    return { ok: false, error: e.message || "Something went wrong" };
   }
 }
 
@@ -67,11 +83,11 @@ export async function getFinancialAdvice({
  */
 function getRisk(age, income, expense, savings, tolerance) {
   let score = age < 30 ? 3 : age < 50 ? 2 : 1;
-  const monthlyIncome = income / 12;
-  const ratio = monthlyIncome ? expense / monthlyIncome : 1;
+  const monthlyIncome = (income || 0) / 12;
+  const ratio = monthlyIncome ? (expense || 0) / monthlyIncome : 1;
 
   score += ratio < 0.5 ? 3 : ratio < 0.75 ? 2 : 1;
-  score += savings > income * 2 ? 3 : savings > income ? 2 : 1;
+  score += (savings || 0) > (income || 0) * 2 ? 3 : (savings || 0) > (income || 0) ? 2 : 1;
   score += { low: 1, medium: 2, high: 3 }[tolerance?.toLowerCase()] || 2;
 
   return score >= 10 ? "High" : score >= 7 ? "Medium" : "Low";

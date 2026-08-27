@@ -1,0 +1,24 @@
+﻿{
+  "name": "arua-finance",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Arua Finance — AI-Powered Personal Wealth & Finance Platform",
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "start:backend": "cd backend && npm start"
+  },
+  "keywords": [
+    "personal-finance",
+    "ai-coach",
+    "wealth-management",
+    "react",
+    "vite",
+    "express",
+    "mongodb",
+    "gemini"
+  ],
+  "author": "Arua Finance Team",
+  "license": "MIT"
+}

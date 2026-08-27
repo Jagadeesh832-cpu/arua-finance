@@ -45,6 +45,7 @@ export default function PhoneAuthModal() {
     setOtpError,
     resendCooldown,
     signInUser,
+    registerUser,
     startSignUpOtp,
     verifySignUpOtp,
     resendSignUpOtp
@@ -368,13 +369,17 @@ export default function PhoneAuthModal() {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-slate-300">Password</label>
-                    <button
-                      type="button"
-                      onClick={() => setAuthError("To reset your password, please contact support or register an account with SMS OTP verification.")}
-                      className="text-[11px] text-cyan-400 hover:text-cyan-300 font-semibold"
+                    <a
+                      href="/forgot-password"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        closeAuthModal();
+                        window.location.href = "/forgot-password";
+                      }}
+                      className="text-[11px] text-cyan-400 hover:text-cyan-300 font-semibold cursor-pointer"
                     >
                       Forgot Password?
-                    </button>
+                    </a>
                   </div>
                   <div className="relative">
                     <Input
@@ -593,24 +598,58 @@ export default function PhoneAuthModal() {
                   </div>
                 </div>
 
-                {/* Submit Button */}
-                <Button
-                  type="submit"
-                  disabled={isSendingOtp}
-                  className="w-full h-11 gradient-bg text-white font-bold rounded-xl shadow-lg shadow-blue-500/25 hover:scale-102 active:scale-98 transition-all text-sm border border-blue-400/30 flex items-center justify-center space-x-2 mt-3"
-                >
-                  {isSendingOtp ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                      <span>Sending Real SMS OTP...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Get 6-Digit SMS OTP</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </Button>
+                {/* Submit Buttons: Direct Registration & SMS OTP */}
+                <div className="space-y-2 pt-1">
+                  <Button
+                    type="button"
+                    onClick={async () => {
+                      setAuthError("");
+                      if (!validateSignUpForm()) return;
+                      const cleanPhone = signUpForm.phoneNumber.replace(/\D/g, "");
+                      await registerUser({
+                        firstName: signUpForm.firstName.trim(),
+                        lastName: signUpForm.lastName.trim(),
+                        email: signUpForm.email.toLowerCase().trim(),
+                        phoneNumber: cleanPhone ? `+91${cleanPhone}` : undefined,
+                        password: signUpForm.password,
+                        confirmPassword: signUpForm.confirmPassword
+                      });
+                    }}
+                    disabled={isSubmitting || isSendingOtp}
+                    className="w-full h-10 gradient-bg text-white font-bold rounded-xl shadow-lg shadow-blue-500/25 hover:scale-102 active:scale-98 transition-all text-xs border border-blue-400/30 flex items-center justify-center space-x-2"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                        <span>Creating Account...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-3.5 h-3.5 text-cyan-300" />
+                        <span>Instant Register (Email & Password)</span>
+                      </>
+                    )}
+                  </Button>
+
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={isSendingOtp || isSubmitting}
+                    className="w-full h-9 border-slate-800 hover:bg-slate-900 text-slate-300 hover:text-white font-semibold rounded-xl text-xs flex items-center justify-center space-x-1.5"
+                  >
+                    {isSendingOtp ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                        <span>Sending SMS OTP...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Or Verify via 2Factor Mobile OTP</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
 
                 <div className="text-center text-xs text-slate-400 pt-1">
                   <span>Already have an account? </span>
