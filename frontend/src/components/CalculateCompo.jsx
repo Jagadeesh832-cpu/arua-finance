@@ -268,34 +268,72 @@ function TaxCalculator({ onSaveResult }) {
   const [calculatorType, setCalculatorType] = useState('simple');
 
   // Simple State
-  const [income, setIncome] = useState('');
-  const [simpleResults, setSimpleResults] = useState(null);
+  const [income, setIncome] = useState('1200000');
+  const [simpleResults, setSimpleResults] = useState(() => {
+    const oldR = calculateTax(1200000, 'old');
+    const newR = calculateTax(1200000, 'new');
+    return {
+      income: 1200000,
+      oldRegime: oldR,
+      newRegime: newR,
+      savings: oldR.total - newR.total,
+      recommendedRegime: oldR.total < newR.total ? 'old' : 'new'
+    };
+  });
 
   // Advanced State
   const [advancedInputs, setAdvancedInputs] = useState({
-    grossIncome: '',
-    sec80C: '',
-    sec80D: '',
-    hra: '',
-    homeLoan: '',
-    otherDeductions: ''
+    grossIncome: '1500000',
+    sec80C: '150000',
+    sec80D: '25000',
+    hra: '120000',
+    homeLoan: '50000',
+    otherDeductions: '0'
   });
-  const [advancedResults, setAdvancedResults] = useState(null);
+  const [advancedResults, setAdvancedResults] = useState(() => {
+    return calculateAdvancedTax({
+      grossIncome: '1500000',
+      sec80C: '150000',
+      sec80D: '25000',
+      hra: '120000',
+      homeLoan: '50000',
+      otherDeductions: '0'
+    });
+  });
+
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     if (LoggedInUserData?.annualIncome) {
-      setIncome(LoggedInUserData.annualIncome);
+      const inc = String(LoggedInUserData.annualIncome);
+      setIncome(inc);
       setAdvancedInputs((prev) => ({
         ...prev,
-        grossIncome: LoggedInUserData.annualIncome
+        grossIncome: inc
       }));
+      // Auto compute initial
+      const num = parseFloat(inc);
+      if (num > 0) {
+        const oldR = calculateTax(num, 'old');
+        const newR = calculateTax(num, 'new');
+        setSimpleResults({
+          income: num,
+          oldRegime: oldR,
+          newRegime: newR,
+          savings: oldR.total - newR.total,
+          recommendedRegime: oldR.total < newR.total ? 'old' : 'new'
+        });
+      }
     }
   }, [LoggedInUserData]);
 
-  const handleSimpleCalculate = () => {
-    const annualIncome = parseFloat(income);
+  const handleSimpleCalculate = (customVal) => {
+    setErrorMsg('');
+    const val = customVal !== undefined ? customVal : income;
+    const annualIncome = parseFloat(val);
     if (isNaN(annualIncome) || annualIncome < 0) {
-      alert('Please enter a valid annual income amount.');
+      setErrorMsg('Please enter a valid positive annual income amount.');
+      setSimpleResults(null);
       return;
     }
 
@@ -316,14 +354,17 @@ function TaxCalculator({ onSaveResult }) {
     if (onSaveResult) onSaveResult(res);
   };
 
-  const handleAdvancedCalculate = () => {
-    const gross = parseFloat(advancedInputs.grossIncome);
+  const handleAdvancedCalculate = (customInputs) => {
+    setErrorMsg('');
+    const inputs = customInputs || advancedInputs;
+    const gross = parseFloat(inputs.grossIncome);
     if (isNaN(gross) || gross < 0) {
-      alert('Please enter a valid gross annual salary.');
+      setErrorMsg('Please enter a valid gross annual salary.');
+      setAdvancedResults(null);
       return;
     }
 
-    const res = calculateAdvancedTax(advancedInputs);
+    const res = calculateAdvancedTax(inputs);
     setAdvancedResults(res);
     if (onSaveResult) {
       onSaveResult({
@@ -418,15 +459,25 @@ function TaxCalculator({ onSaveResult }) {
                   <input
                     type="number"
                     value={income}
-                    onChange={(e) => setIncome(e.target.value)}
+                    onChange={(e) => {
+                      setIncome(e.target.value);
+                      handleSimpleCalculate(e.target.value);
+                    }}
                     placeholder="e.g. 1200000"
                     className="w-full pl-9 pr-4 py-3 bg-slate-950/80 border border-slate-700/80 rounded-xl text-white placeholder-slate-500 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 outline-none text-base font-semibold"
                   />
                 </div>
               </div>
 
+              {errorMsg && (
+                <div className="p-3 bg-rose-950/60 border border-rose-800 text-rose-300 text-xs rounded-xl flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+
               <button
-                onClick={handleSimpleCalculate}
+                onClick={() => handleSimpleCalculate()}
                 className="w-full gradient-bg text-white py-3.5 px-6 rounded-xl font-bold text-sm shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center space-x-2 border border-blue-400/30"
               >
                 <Sparkles className="w-4 h-4 text-cyan-300" />

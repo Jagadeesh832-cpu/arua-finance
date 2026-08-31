@@ -30,18 +30,33 @@ export function sanitizeUser(user) {
   return userObj;
 }
 
+// Normalization helpers
+export function normalizePhoneNumber(rawPhone) {
+  if (!rawPhone) return "";
+  const digits = String(rawPhone).replace(/\D/g, "");
+  const p10 = digits.length > 10 ? digits.slice(-10) : digits;
+  return p10.length === 10 ? `+91${p10}` : String(rawPhone).trim();
+}
+
+export function normalizeEmail(rawEmail) {
+  if (!rawEmail) return "";
+  return String(rawEmail).toLowerCase().trim();
+}
+
 // Helper to find a user by multiple identifiers
 export async function findUserByIdentifier(identifier) {
   if (!identifier) return null;
   const clean = String(identifier).trim();
   const cleanDigits = clean.replace(/\D/g, "");
   const formattedPhone = cleanDigits.length === 10 ? `+91${cleanDigits}` : clean;
+  const phone10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits;
 
   return await User.findOne({
     $or: [
       { email: clean.toLowerCase() },
       { phoneNumber: clean },
       { phoneNumber: formattedPhone },
+      ...(phone10.length === 10 ? [{ phoneNumber: phone10 }] : []),
       ...(clean.match(/^[0-9a-fA-F]{24}$/) ? [{ _id: clean }] : [])
     ]
   });
@@ -49,36 +64,42 @@ export async function findUserByIdentifier(identifier) {
 
 // Create or fetch existing user
 export async function createUser({
+  name,
   firstName,
   lastName,
-  name,
   picture,
   email,
   phoneNumber,
   password,
   passwordHash,
+  phoneVerified = false,
   annualIncome,
   monthlyBudget,
   riskTolerance,
   goals,
-  budgetBreakdown
+  budgetBreakdown,
+  notificationPreferences
 }) {
-  if (!name && !firstName && !phoneNumber && !email) {
-    throw new Error("Name, phone number, or email is required");
+  const cleanName = (name || "").trim() || (firstName ? `${firstName} ${lastName || ""}`.trim() : "");
+  const cleanEmail = email ? normalizeEmail(email) : "";
+  const cleanPhone = phoneNumber ? normalizePhoneNumber(phoneNumber) : "";
+
+  if (!cleanName && !cleanPhone && !cleanEmail) {
+    throw new Error("Name, mobile number, or email is required.");
   }
 
   const queryOr = [];
-  if (phoneNumber) queryOr.push({ phoneNumber });
-  if (email) queryOr.push({ email: email.toLowerCase().trim() });
+  if (cleanPhone) queryOr.push({ phoneNumber: cleanPhone });
+  if (cleanEmail) queryOr.push({ email: cleanEmail });
 
   if (queryOr.length > 0) {
     const existingUser = await User.findOne({ $or: queryOr });
     if (existingUser) {
-      if (phoneNumber && !existingUser.phoneNumber) existingUser.phoneNumber = phoneNumber;
-      if (email && !existingUser.email) existingUser.email = email.toLowerCase().trim();
-      if (firstName && !existingUser.firstName) existingUser.firstName = firstName.trim();
-      if (lastName && !existingUser.lastName) existingUser.lastName = lastName.trim();
+      if (cleanPhone && !existingUser.phoneNumber) existingUser.phoneNumber = cleanPhone;
+      if (cleanEmail && !existingUser.email) existingUser.email = cleanEmail;
+      if (cleanName && !existingUser.name) existingUser.name = cleanName;
       if (picture && !existingUser.picture) existingUser.picture = picture;
+      if (phoneVerified) existingUser.phoneVerified = true;
       await existingUser.save();
       return existingUser;
     }
@@ -89,23 +110,40 @@ export async function createUser({
     finalHash = await bcrypt.hash(password, 10);
   }
 
-  const fName = (firstName || "").trim();
-  const lName = (lastName || "").trim();
-  const derivedFullName = name || (fName || lName ? `${fName} ${lName}`.trim() : (phoneNumber ? `Investor ${phoneNumber.slice(-4)}` : "Arua Investor"));
+  const finalName = cleanName || (cleanPhone ? `Investor ${cleanPhone.slice(-4)}` : "Investor");
 
   const newUser = new User({
-    firstName: fName,
-    lastName: lName,
-    name: derivedFullName,
+    name: finalName,
+    firstName: firstName ? firstName.trim() : undefined,
+    lastName: lastName ? lastName.trim() : undefined,
     picture: picture || "",
-    email: email ? email.toLowerCase().trim() : (phoneNumber ? `${phoneNumber.replace(/[^0-9]/g, '')}@arua.finance` : `user_${Date.now()}@arua.finance`),
-    phoneNumber: phoneNumber || "",
+    email: cleanEmail || (cleanPhone ? `${cleanPhone.replace(/[^0-9]/g, '')}@arua.finance` : `user_${Date.now()}@arua.finance`),
+    phoneNumber: cleanPhone || undefined,
+    phoneVerified: Boolean(phoneVerified),
     passwordHash: finalHash || undefined,
     annualIncome: annualIncome !== undefined ? Number(annualIncome) : 500000,
     monthlyBudget: monthlyBudget !== undefined ? Number(monthlyBudget) : 30000,
+    monthlyExpense: 20000,
+    savings: 50000,
     riskTolerance: riskTolerance || "Medium",
     goals: goals || [],
-    budgetBreakdown: budgetBreakdown || { needs: 50, wants: 20, savings: 15, investments: 10, emergencyFund: 5 }
+    budgetBreakdown: budgetBreakdown || { needs: 50, wants: 20, savings: 15, investments: 10, emergencyFund: 5 },
+    notificationPreferences: notificationPreferences || {
+      inAppAlerts: true,
+      smsAlerts: false,
+      smsBudgetAlerts: true,
+      smsDailyAlerts: true,
+      smsUnusualAlerts: true,
+      emailAlerts: true,
+      emailSecurityAlerts: true,
+      emailBudgetAlerts: false,
+      budgetThresholdAlerts: true,
+      budgetExceededAlerts: true,
+      categoryBudgetAlerts: true,
+      unusualSpendingAlerts: true,
+      dailySpendingAlerts: true,
+      budgetThresholds: [50, 75, 90, 100]
+    }
   });
 
   return await newUser.save();
@@ -122,10 +160,11 @@ export async function updateUserDetails(identifier, updates) {
   if (!identifier) throw new Error("Identifier (email or phone) is required");
 
   const allowedFields = [
-    'firstName', 'lastName', 'name', 'picture', 'email', 'phoneNumber', 'age',
+    'name', 'firstName', 'lastName', 'picture', 'email', 'phoneNumber', 'age',
     'annualIncome', 'monthlyExpense', 'savings', 'investmentHorizon',
     'riskTolerance', 'financialGoal', 'preferredAssets', 'expenses', 'monthlyBudget',
-    'goals', 'budgetBreakdown', 'notificationPreferences', 'lastBudgetAlertSent'
+    'goals', 'budgetBreakdown', 'notificationPreferences', 'lastBudgetAlertSent',
+    'phoneVerified'
   ];
 
   const filteredUpdates = {};
@@ -133,17 +172,20 @@ export async function updateUserDetails(identifier, updates) {
     if (updates[key] !== undefined) filteredUpdates[key] = updates[key];
   }
 
-  if (filteredUpdates.firstName || filteredUpdates.lastName) {
-    const f = filteredUpdates.firstName || "";
-    const l = filteredUpdates.lastName || "";
-    if (!filteredUpdates.name && (f || l)) {
-      filteredUpdates.name = `${f} ${l}`.trim();
-    }
+  if (filteredUpdates.email) {
+    filteredUpdates.email = normalizeEmail(filteredUpdates.email);
+  }
+  if (filteredUpdates.phoneNumber) {
+    filteredUpdates.phoneNumber = normalizePhoneNumber(filteredUpdates.phoneNumber);
+  }
+  if (filteredUpdates.name) {
+    filteredUpdates.name = filteredUpdates.name.trim();
   }
 
   const clean = String(identifier).trim();
   const cleanDigits = clean.replace(/\D/g, "");
   const formattedPhone = cleanDigits.length === 10 ? `+91${cleanDigits}` : clean;
+  const phone10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits;
 
   return await User.findOneAndUpdate(
     {
@@ -151,6 +193,7 @@ export async function updateUserDetails(identifier, updates) {
         { email: clean.toLowerCase() },
         { phoneNumber: clean },
         { phoneNumber: formattedPhone },
+        ...(phone10.length === 10 ? [{ phoneNumber: phone10 }] : []),
         ...(clean.match(/^[0-9a-fA-F]{24}$/) ? [{ _id: clean }] : [])
       ]
     },
@@ -159,13 +202,85 @@ export async function updateUserDetails(identifier, updates) {
   );
 }
 
-// Create cryptographically secure Password Reset Token
-export async function createPasswordResetToken(email) {
+// Create cryptographically secure 6-digit numeric Email OTP for Password Reset
+export async function createEmailResetOtp(email) {
   if (!email) throw new Error("Email is required");
-  const cleanEmail = email.toLowerCase().trim();
+  const cleanEmail = normalizeEmail(email);
   const user = await User.findOne({ email: cleanEmail });
   if (!user) {
-    return { success: false, message: "No account found with this email address." };
+    return { success: false, message: "No account found with this email address. Please check your spelling or Sign Up." };
+  }
+
+  // Generate 6-digit numeric OTP (100000 - 999999)
+  const otp = crypto.randomInt(100000, 1000000).toString();
+  const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+
+  user.emailResetOtpHash = otpHash;
+  user.emailResetOtpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
+  await user.save();
+
+  return {
+    success: true,
+    user,
+    otp,
+    email: cleanEmail
+  };
+}
+
+// Verify Email OTP and issue temporary Reset Token
+export async function verifyEmailResetOtp(email, otp) {
+  if (!email || !otp) {
+    return { success: false, message: "Email and OTP code are required." };
+  }
+
+  const cleanEmail = normalizeEmail(email);
+  const cleanOtp = String(otp).trim();
+
+  const user = await User.findOne({ email: cleanEmail }).select('+emailResetOtpHash +emailResetOtpExpires');
+
+  if (!user || !user.emailResetOtpHash || !user.emailResetOtpExpires) {
+    return { success: false, message: "Invalid or expired OTP. Please request a new verification code." };
+  }
+
+  if (new Date(user.emailResetOtpExpires).getTime() < Date.now()) {
+    user.emailResetOtpHash = undefined;
+    user.emailResetOtpExpires = undefined;
+    await user.save();
+    return { success: false, message: "Email OTP has expired (valid for 10 minutes). Please request a new code." };
+  }
+
+  const providedHash = crypto.createHash('sha256').update(cleanOtp).digest('hex');
+  if (providedHash !== user.emailResetOtpHash) {
+    return { success: false, message: "Incorrect OTP. Please enter the 6-digit code sent to your email." };
+  }
+
+  // Clear the OTP fields upon successful verification
+  user.emailResetOtpHash = undefined;
+  user.emailResetOtpExpires = undefined;
+
+  // Generate 15-minute password reset token
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+  user.resetPasswordToken = tokenHash;
+  user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000);
+  await user.save();
+
+  return {
+    success: true,
+    resetToken,
+    user: sanitizeUser(user),
+    message: "Email OTP verified successfully. Please choose your new password."
+  };
+}
+
+// Create cryptographically secure Password Reset Token for Email Link (legacy/alternate)
+export async function createPasswordResetToken(email) {
+  if (!email) throw new Error("Email is required");
+  const cleanEmail = normalizeEmail(email);
+  const user = await User.findOne({ email: cleanEmail });
+  if (!user) {
+    return { success: false, message: "No account found with this email address. Please check your spelling or Sign Up." };
   }
 
   const resetToken = crypto.randomBytes(32).toString('hex');
@@ -182,7 +297,39 @@ export async function createPasswordResetToken(email) {
   };
 }
 
-// Reset Password with Token
+// Create cryptographically secure Password Reset Token for Phone
+export async function createPhoneResetToken(phoneNumber) {
+  if (!phoneNumber) throw new Error("Phone number is required");
+  const normalizedPhone = normalizePhoneNumber(phoneNumber);
+  const rawDigits = String(phoneNumber).replace(/\D/g, "");
+  const phone10 = rawDigits.slice(-10);
+
+  const user = await User.findOne({
+    $or: [
+      { phoneNumber: normalizedPhone },
+      { phoneNumber: phone10 }
+    ]
+  });
+
+  if (!user) {
+    return { success: false, message: "Unable to process this request. Please check your details." };
+  }
+
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+  user.resetPasswordToken = tokenHash;
+  user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes valid for OTP flow
+  await user.save();
+
+  return {
+    success: true,
+    user,
+    resetToken
+  };
+}
+
+// Reset Password with Token (shared by email & phone OTP flows)
 export async function resetPasswordWithToken(token, newPassword) {
   if (!token) throw new Error("Reset token is required");
   if (!newPassword || newPassword.length < 6) throw new Error("Password must be at least 6 characters");
@@ -195,7 +342,7 @@ export async function resetPasswordWithToken(token, newPassword) {
   }).select('+passwordHash +resetPasswordToken +resetPasswordExpires');
 
   if (!user) {
-    return { success: false, message: "Password reset token is invalid or has expired. Please request a new link." };
+    return { success: false, message: "Password reset token is invalid or has expired. Please request a new link or OTP." };
   }
 
   user.passwordHash = await bcrypt.hash(newPassword, 10);

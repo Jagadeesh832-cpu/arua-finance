@@ -12,9 +12,14 @@ import {
   generateAuthToken,
   sanitizeUser,
   findUserByIdentifier,
+  createEmailResetOtp,
+  verifyEmailResetOtp,
   createPasswordResetToken,
+  createPhoneResetToken,
   resetPasswordWithToken,
   changeUserPassword,
+  normalizePhoneNumber,
+  normalizeEmail,
   addExpenseToUser,
   updateExpenseInUser,
   deleteExpenseFromUser,
@@ -148,103 +153,13 @@ function formatINR(val) {
 }
 
 // ==========================================
-// 1. AUTHENTICATION: Direct Email Registration
+// 1. AUTHENTICATION: Direct Registration (Disabled in favor of OTP Verification)
 // ==========================================
 app.post('/api/auth/register', async (req, res) => {
-  try {
-    const { firstName, lastName, name, email, phoneNumber, password, confirmPassword } = req.body;
-
-    const fName = (firstName || "").trim();
-    const lName = (lastName || "").trim();
-    const fullName = name ? name.trim() : (fName || lName ? `${fName} ${lName}`.trim() : "");
-
-    if (!fullName && !fName) {
-      return res.status(400).json({ success: false, message: "Please enter your full name." });
-    }
-
-    if (!email || !email.trim()) {
-      return res.status(400).json({ success: false, message: "Email address is required." });
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) {
-      return res.status(400).json({ success: false, message: "Please provide a valid email format." });
-    }
-
-    if (!password || password.length < 6) {
-      return res.status(400).json({ success: false, message: "Password must be at least 6 characters long." });
-    }
-
-    if (confirmPassword !== undefined && password !== confirmPassword) {
-      return res.status(400).json({ success: false, message: "Passwords do not match." });
-    }
-
-    const cleanEmail = email.toLowerCase().trim();
-
-    // Check duplicate email
-    const existing = await User.findOne({ email: cleanEmail });
-    if (existing) {
-      return res.status(400).json({
-        success: false,
-        message: "An account with this email address already exists. Please Sign In."
-      });
-    }
-
-    // Format phone if provided
-    let formattedPhone = "";
-    if (phoneNumber) {
-      const rawPhone = String(phoneNumber).replace(/\D/g, "");
-      const phone10 = rawPhone.length > 10 ? rawPhone.slice(-10) : rawPhone;
-      if (phone10.length === 10) {
-        formattedPhone = `+91${phone10}`;
-        const existingPhone = await User.findOne({
-          $or: [{ phoneNumber: formattedPhone }, { phoneNumber: phone10 }]
-        });
-        if (existingPhone) {
-          return res.status(400).json({
-            success: false,
-            message: "An account with this mobile number already exists. Please Sign In."
-          });
-        }
-      }
-    }
-
-    // Hash password with bcrypt
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    const newUser = new User({
-      firstName: fName,
-      lastName: lName,
-      name: fullName || (fName ? `${fName} ${lName}`.trim() : "Investor"),
-      email: cleanEmail,
-      phoneNumber: formattedPhone || undefined,
-      passwordHash: passwordHash,
-      annualIncome: 500000,
-      monthlyBudget: 30000,
-      monthlyExpense: 20000,
-      savings: 50000,
-      riskTolerance: "Medium",
-      expenses: [],
-      goals: [],
-      budgetBreakdown: { needs: 50, wants: 20, savings: 15, investments: 10, emergencyFund: 5 },
-      notificationPreferences: { emailAlerts: true, budgetThresholds: 80 }
-    });
-
-    await newUser.save();
-
-    const token = generateAuthToken(newUser);
-    const sanitized = sanitizeUser(newUser);
-
-    res.status(201).json({
-      success: true,
-      token,
-      user: sanitized,
-      message: "Account registered successfully!"
-    });
-  } catch (err) {
-    console.error("register error:", err);
-    res.status(500).json({ success: false, message: err.message || "Failed to register account." });
-  }
+  return res.status(400).json({
+    success: false,
+    message: "Direct registration without verification is disabled. Please create your account with mobile OTP verification."
+  });
 });
 
 // ==========================================
@@ -293,7 +208,7 @@ const handleLogin = async (req, res) => {
     if (!user.passwordHash) {
       return res.status(400).json({
         success: false,
-        message: "This account was created via quick phone verification. Please sign in using Phone OTP or set up a password in your Profile."
+        message: "This account has no password set. Please use password reset to establish a secure password."
       });
     }
 
@@ -328,8 +243,124 @@ app.post('/api/auth/login', handleLogin);
 app.post('/api/auth/signin', handleLogin);
 
 // ==========================================
-// 3. AUTHENTICATION: Forgot Password & Reset Flow
+// 3. AUTHENTICATION: Dual Forgot Password & Reset Flow
 // ==========================================
+
+// A. Email Password Reset: Step 1 - Send 6-Digit Email OTP
+app.post('/api/auth/forgot-password-email-otp', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ success: false, message: "Please enter your registered email address." });
+    }
+
+    const cleanEmail = normalizeEmail(email);
+
+    // Rate-limit email OTP requests (max 5 per 5 minutes)
+    const rateCheck = checkRateLimit(`fp_email_otp_${cleanEmail}`, 5, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return res.status(429).json({ success: false, message: rateCheck.message });
+    }
+
+    const otpResult = await createEmailResetOtp(cleanEmail);
+    if (!otpResult.success) {
+      return res.status(404).json({
+        success: false,
+        message: "No account found with this email address. Please check your spelling or Sign Up."
+      });
+    }
+
+    const userName = otpResult.user?.name || "Investor";
+    const otpCode = otpResult.otp;
+
+    const mailHtml = `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #070b14; color: #f8fafc; padding: 32px; border-radius: 16px; border: 1px solid #1e293b;">
+        <div style="text-align: center; margin-bottom: 28px;">
+          <h1 style="color: #38bdf8; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.5px;">Arua Finance</h1>
+          <p style="color: #94a3b8; font-size: 13px; margin-top: 4px;">Smarter Money. Powered by AI.</p>
+        </div>
+        
+        <div style="background-color: #0f172a; border-radius: 12px; padding: 24px; border: 1px solid #334155;">
+          <h2 style="color: #ffffff; font-size: 18px; margin: 0 0 12px 0;">Password Reset Verification Code</h2>
+          <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+            Hi ${userName},<br/>
+            You requested a password reset for your Arua Finance account. Use the 6-digit verification code below to set your new password:
+          </p>
+          
+          <div style="text-align: center; margin: 24px 0;">
+            <div style="display: inline-block; background: linear-gradient(135deg, #1e3a8a, #4338ca); color: #ffffff; font-family: monospace; font-size: 32px; font-weight: 800; letter-spacing: 8px; padding: 16px 32px; border-radius: 12px; border: 1px solid #3b82f6; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">
+              ${otpCode}
+            </div>
+          </div>
+          
+          <p style="color: #94a3b8; font-size: 13px; text-align: center; margin: 0 0 8px 0;">
+            This code expires in <strong style="color: #38bdf8;">10 minutes</strong>.
+          </p>
+          <p style="color: #64748b; font-size: 12px; text-align: center; margin: 0;">
+            Never share this code with anyone. Arua Finance representatives will never ask for your verification code.
+          </p>
+        </div>
+        
+        <hr style="border: 0; border-top: 1px solid #1e293b; margin: 24px 0;" />
+        
+        <p style="color: #64748b; font-size: 11px; text-align: center; margin: 0;">
+          If you did not request this verification code, please ignore this email or contact security if you suspect unauthorized activity.
+        </p>
+      </div>
+    `;
+
+    // Attempt to send email via Nodemailer
+    const mailRes = await SendMail({
+      email: cleanEmail,
+      subject: `Arua Finance — ${otpCode} is your password reset code`,
+      html: mailHtml
+    });
+
+    const isEmailSent = Boolean(mailRes && mailRes.success);
+    const feedbackMessage = isEmailSent
+      ? "Verification code has been dispatched to your email address."
+      : (mailRes?.message || "Email OTP generated. SMTP configuration is required in backend/.env for live delivery.");
+
+    res.status(200).json({
+      success: true,
+      emailSent: isEmailSent,
+      email: cleanEmail,
+      message: feedbackMessage
+    });
+  } catch (err) {
+    console.error("forgot-password-email-otp error:", err);
+    res.status(500).json({ success: false, message: "Unable to process email OTP request. Please check your details." });
+  }
+});
+
+// A2. Email Password Reset: Step 2 - Verify 6-Digit Email OTP
+app.post('/api/auth/forgot-password-email-verify', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      return res.status(400).json({ success: false, message: "Registered email and 6-digit OTP code are required." });
+    }
+
+    const cleanEmail = normalizeEmail(email);
+    const cleanOtp = String(otp).trim();
+
+    const verifyResult = await verifyEmailResetOtp(cleanEmail, cleanOtp);
+    if (!verifyResult.success) {
+      return res.status(400).json(verifyResult);
+    }
+
+    res.status(200).json({
+      success: true,
+      resetToken: verifyResult.resetToken,
+      message: "Email OTP verified successfully. Please choose a new password."
+    });
+  } catch (err) {
+    console.error("forgot-password-email-verify error:", err);
+    res.status(500).json({ success: false, message: "Failed to verify email OTP." });
+  }
+});
+
+// Legacy / Link-based Forgot Password (Optional fallback)
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -337,13 +368,13 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       return res.status(400).json({ success: false, message: "Please enter your registered email address." });
     }
 
-    const cleanEmail = email.toLowerCase().trim();
+    const cleanEmail = normalizeEmail(email);
     const tokenResult = await createPasswordResetToken(cleanEmail);
 
     if (!tokenResult.success) {
       return res.status(404).json({
         success: false,
-        message: "No account found with this email address. Please check your spelling or Sign Up."
+        message: "Unable to process this request. Please check your details."
       });
     }
 
@@ -384,32 +415,131 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       </div>
     `;
 
-    // Attempt to send email via Nodemailer
-    let emailSent = false;
-    try {
-      const mailRes = await SendMail({
-        email: cleanEmail,
-        subject: "Arua Finance — Password Reset Request",
-        html: mailHtml
+    const mailRes = await SendMail({
+      email: cleanEmail,
+      subject: "Arua Finance — Password Reset Request",
+      html: mailHtml
+    });
+
+    const isEmailSent = Boolean(mailRes && mailRes.success);
+    const feedbackMessage = isEmailSent
+      ? "Password reset link has been dispatched to your email address."
+      : (mailRes?.message || "Password reset token generated. Email configuration is required in backend/.env for live delivery.");
+
+    res.status(200).json({
+      success: true,
+      emailSent: isEmailSent,
+      resetToken: process.env.NODE_ENV !== "production" ? tokenResult.resetToken : undefined,
+      resetUrl: process.env.NODE_ENV !== "production" ? resetUrl : undefined,
+      message: feedbackMessage
+    });
+  } catch (err) {
+    console.error("forgot-password error:", err);
+    res.status(500).json({ success: false, message: "Unable to process this request. Please check your details." });
+  }
+});
+
+// B. Mobile Number OTP Password Reset: Step 1 - Send OTP to Registered Phone
+app.post('/api/auth/forgot-password-phone-otp', async (req, res) => {
+  try {
+    const rawPhone = req.body.phoneNumber || req.body.phone;
+    if (!rawPhone) {
+      return res.status(400).json({ success: false, message: "Please enter a valid Indian mobile number." });
+    }
+
+    const cleanDigits = String(rawPhone).replace(/\D/g, "");
+    const phone10 = cleanDigits.length > 10 ? cleanDigits.slice(-10) : cleanDigits;
+
+    if (phone10.length !== 10) {
+      return res.status(400).json({ success: false, message: "Please enter a valid Indian mobile number." });
+    }
+
+    const formattedPhone = `+91${phone10}`;
+
+    // Verify user exists in MongoDB
+    const user = await User.findOne({
+      $or: [
+        { phoneNumber: formattedPhone },
+        { phoneNumber: phone10 }
+      ]
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Unable to process this request. Please check your details."
       });
-      emailSent = mailRes && mailRes.success;
-    } catch (mailErr) {
-      console.warn("Nodemailer dispatch warning:", mailErr.message);
+    }
+
+    // Rate-limit forgot password OTP attempts
+    const rateCheck = checkRateLimit(`fp_otp_${phone10}`, 5, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return res.status(429).json({ success: false, message: rateCheck.message });
+    }
+
+    // Send 2Factor SMS OTP
+    const otpResult = await TwoFactorService.sendOtp(phone10);
+    if (!otpResult.success) {
+      return res.status(400).json(otpResult);
     }
 
     res.status(200).json({
       success: true,
-      emailSent,
-      resetToken: process.env.NODE_ENV !== "production" ? tokenResult.resetToken : undefined,
-      resetUrl: process.env.NODE_ENV !== "production" ? resetUrl : undefined,
-      message: "Password reset link has been dispatched to your email address."
+      sessionId: otpResult.sessionId,
+      otpLength: otpResult.otpLength || 6,
+      maskedPhone: maskPhone(phone10),
+      phoneNumber: formattedPhone,
+      message: `Verification code sent to ${maskPhone(phone10)}`
     });
   } catch (err) {
-    console.error("forgot-password error:", err);
-    res.status(500).json({ success: false, message: err.message || "Failed to process password reset." });
+    console.error("forgot-password-phone-otp error:", err);
+    res.status(500).json({ success: false, message: "Unable to process this request. Please check your details." });
   }
 });
 
+// B. Mobile Number OTP Password Reset: Step 2 - Verify OTP & Generate Reset Session Token
+app.post('/api/auth/forgot-password-phone-verify', async (req, res) => {
+  try {
+    const { phoneNumber, phone, sessionId, otp } = req.body;
+    const rawPhone = phoneNumber || phone;
+
+    if (!rawPhone || !sessionId || !otp) {
+      return res.status(400).json({ success: false, message: "Mobile number, session ID, and OTP code are required." });
+    }
+
+    const cleanDigits = String(rawPhone).replace(/\D/g, "");
+    const phone10 = cleanDigits.length > 10 ? cleanDigits.slice(-10) : cleanDigits;
+
+    if (phone10.length !== 10) {
+      return res.status(400).json({ success: false, message: "Please enter a valid Indian mobile number." });
+    }
+
+    const formattedPhone = `+91${phone10}`;
+
+    // Verify OTP via 2Factor SMS Gateway
+    const verifyResult = await TwoFactorService.verifyOtp(sessionId, otp);
+    if (!verifyResult.success) {
+      return res.status(400).json(verifyResult);
+    }
+
+    // Generate short-lived reset token for password update
+    const tokenResult = await createPhoneResetToken(formattedPhone);
+    if (!tokenResult.success) {
+      return res.status(404).json(tokenResult);
+    }
+
+    res.status(200).json({
+      success: true,
+      resetToken: tokenResult.resetToken,
+      message: "OTP verified successfully. Please choose a new password."
+    });
+  } catch (err) {
+    console.error("forgot-password-phone-verify error:", err);
+    res.status(500).json({ success: false, message: "Failed to verify OTP." });
+  }
+});
+
+// Reset Password with Token (Shared by Email link and Phone OTP flows)
 app.post('/api/auth/reset-password/:token', async (req, res) => {
   try {
     const { token } = req.params;
@@ -466,31 +596,30 @@ app.post('/api/auth/change-password', async (req, res) => {
 });
 
 // ==========================================
-// 4. AUTHENTICATION: 2Factor SMS OTP Handlers
+// 4. AUTHENTICATION: 2Factor SMS OTP Registration
 // ==========================================
 app.post('/api/auth/signup-otp', async (req, res) => {
   try {
-    const { firstName, lastName, email, phoneNumber, password, confirmPassword } = req.body;
+    const { name, firstName, lastName, email, phoneNumber, phone, password, confirmPassword } = req.body;
 
-    if (!firstName || !firstName.trim()) {
-      return res.status(400).json({ success: false, message: "First name is required." });
+    const finalName = (name || "").trim() || (firstName ? `${firstName} ${lastName || ""}`.trim() : "");
+    if (!finalName) {
+      return res.status(400).json({ success: false, message: "Please enter your name." });
     }
-    if (!lastName || !lastName.trim()) {
-      return res.status(400).json({ success: false, message: "Last name is required." });
-    }
+
     if (!email || !email.trim()) {
-      return res.status(400).json({ success: false, message: "Valid email address is required." });
+      return res.status(400).json({ success: false, message: "Please enter a valid email address." });
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      return res.status(400).json({ success: false, message: "Please enter a valid email format." });
+      return res.status(400).json({ success: false, message: "Please enter a valid email address." });
     }
 
-    const rawPhone = String(phoneNumber || "").replace(/\D/g, "");
+    const rawPhone = String(phoneNumber || phone || "").replace(/\D/g, "");
     const phone10 = rawPhone.length > 10 ? rawPhone.slice(-10) : rawPhone;
     if (phone10.length !== 10) {
-      return res.status(400).json({ success: false, message: "Please enter a valid 10-digit Indian mobile number." });
+      return res.status(400).json({ success: false, message: "Please enter a valid Indian mobile number." });
     }
 
     if (!password || password.length < 6) {
@@ -501,7 +630,7 @@ app.post('/api/auth/signup-otp', async (req, res) => {
       return res.status(400).json({ success: false, message: "Passwords do not match." });
     }
 
-    const cleanEmail = email.toLowerCase().trim();
+    const cleanEmail = normalizeEmail(email);
     const formattedPhone = `+91${phone10}`;
 
     // Check if email already exists in MongoDB
@@ -552,18 +681,19 @@ app.post('/api/auth/signup-otp', async (req, res) => {
 
 app.post('/api/auth/signup-verify', async (req, res) => {
   try {
-    const { firstName, lastName, email, phoneNumber, password, sessionId, otp } = req.body;
+    const { name, firstName, lastName, email, phoneNumber, phone, password, sessionId, otp } = req.body;
+    const finalName = (name || "").trim() || (firstName ? `${firstName} ${lastName || ""}`.trim() : "");
 
-    if (!firstName || !lastName || !email || !phoneNumber || !password) {
+    if (!finalName || !email || (!phoneNumber && !phone) || !password) {
       return res.status(400).json({ success: false, message: "Missing required registration details." });
     }
     if (!sessionId || !otp) {
       return res.status(400).json({ success: false, message: "OTP session ID and verification code are required." });
     }
 
-    const rawPhone = String(phoneNumber || "").replace(/\D/g, "");
+    const rawPhone = String(phoneNumber || phone || "").replace(/\D/g, "");
     const phone10 = rawPhone.length > 10 ? rawPhone.slice(-10) : rawPhone;
-    const cleanEmail = email.toLowerCase().trim();
+    const cleanEmail = normalizeEmail(email);
     const formattedPhone = `+91${phone10}`;
 
     // Verify OTP via 2Factor SMS Service
@@ -585,15 +715,13 @@ app.post('/api/auth/signup-verify', async (req, res) => {
 
     // Hash password securely with bcrypt
     const passwordHash = await bcrypt.hash(password, 10);
-    const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
 
-    // Create user in MongoDB Atlas
+    // Create user in MongoDB Atlas with phoneVerified = true
     const newUser = new User({
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      name: fullName,
+      name: finalName,
       email: cleanEmail,
       phoneNumber: formattedPhone,
+      phoneVerified: true,
       passwordHash: passwordHash,
       annualIncome: 500000,
       monthlyBudget: 30000,
@@ -603,7 +731,22 @@ app.post('/api/auth/signup-verify', async (req, res) => {
       expenses: [],
       goals: [],
       budgetBreakdown: { needs: 50, wants: 20, savings: 15, investments: 10, emergencyFund: 5 },
-      notificationPreferences: { emailAlerts: true, budgetThresholds: 80 }
+      notificationPreferences: {
+        inAppAlerts: true,
+        smsAlerts: false,
+        smsBudgetAlerts: true,
+        smsDailyAlerts: true,
+        smsUnusualAlerts: true,
+        emailAlerts: true,
+        emailSecurityAlerts: true,
+        emailBudgetAlerts: false,
+        budgetThresholdAlerts: true,
+        budgetExceededAlerts: true,
+        categoryBudgetAlerts: true,
+        unusualSpendingAlerts: true,
+        dailySpendingAlerts: true,
+        budgetThresholds: [50, 75, 90, 100]
+      }
     });
 
     await newUser.save();

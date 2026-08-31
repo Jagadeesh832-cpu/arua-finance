@@ -1,4 +1,4 @@
-﻿import { Notification } from './notification.model.js';
+import { Notification } from './notification.model.js';
 import { AnomalyService } from './anomaly.service.js';
 import { SmsService } from './sms.service.js';
 import { PushService } from './push.service.js';
@@ -23,14 +23,21 @@ export class SpendingAlertService {
       const currentMonth = now.getMonth();
       const currentYear = now.getFullYear();
       const periodKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+      const todayDateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
 
-      // 1. Calculate user's actual spending for current month
+      // 1. Calculate user's actual spending for current month & today
       const monthExpenses = (user.expenses || []).filter(e => {
         const d = new Date(e.date || Date.now());
         return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
       });
 
+      const todayExpenses = (user.expenses || []).filter(e => {
+        const d = new Date(e.date || Date.now());
+        return d.toISOString().split('T')[0] === todayDateStr;
+      });
+
       const totalMonthSpent = monthExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+      const totalTodaySpent = todayExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
       const monthlyBudget = Number(user.monthlyBudget) || 0;
       const budgetUsagePercent = monthlyBudget > 0 ? (totalMonthSpent / monthlyBudget) * 100 : 0;
       const remainingBudget = Math.max(0, monthlyBudget - totalMonthSpent);
@@ -41,6 +48,7 @@ export class SpendingAlertService {
       if (!user.triggeredAlerts[periodKey]) {
         user.triggeredAlerts[periodKey] = {
           thresholds: [],
+          dailyAlerts: [],
           categories: {},
           lastOverBudgetAlert: null,
           lastOverBudgetAmount: 0
@@ -48,6 +56,7 @@ export class SpendingAlertService {
       }
       const periodAlerts = user.triggeredAlerts[periodKey];
       periodAlerts.thresholds = periodAlerts.thresholds || [];
+      periodAlerts.dailyAlerts = periodAlerts.dailyAlerts || [];
       periodAlerts.categories = periodAlerts.categories || {};
 
       const prefs = user.notificationPreferences || {};
@@ -58,7 +67,7 @@ export class SpendingAlertService {
       const alertsToTrigger = [];
 
       // ========================================================
-      // 3. Check Monthly Overall Budget Thresholds
+      // 3. Check Monthly Overall Budget Thresholds (50%, 75%, 90%, 100%)
       // ========================================================
       if (monthlyBudget > 0 && prefs.budgetThresholdAlerts !== false) {
         for (const threshold of activeThresholds) {
@@ -93,6 +102,7 @@ export class SpendingAlertService {
               message,
               type,
               priority,
+              channelType: 'budget',
               relatedFeature: 'budget',
               metadata: {
                 threshold,
@@ -134,6 +144,7 @@ export class SpendingAlertService {
               message: `You have exceeded your monthly budget of ${formattedBudget} by ${formattedOver} (Total Spent: ${formattedSpent}).`,
               type: 'critical',
               priority: 'critical',
+              channelType: 'budget',
               relatedFeature: 'budget',
               metadata: {
                 threshold: 100,
@@ -155,13 +166,34 @@ export class SpendingAlertService {
       }
 
       // ========================================================
-      // 5. Category-wise Budget Alerts
+      // 5. Check Daily Spending Summary Alert (Sensible threshold, 1 SMS per day max)
+      // ========================================================
+      if (totalTodaySpent >= 2500 && prefs.dailySpendingAlerts !== false) {
+        if (!periodAlerts.dailyAlerts.includes(todayDateStr)) {
+          periodAlerts.dailyAlerts.push(todayDateStr);
+          alertsToTrigger.push({
+            title: 'Daily Spending Notice',
+            message: `You have spent ₹${totalTodaySpent.toLocaleString('en-IN')} today.`,
+            type: 'info',
+            priority: 'medium',
+            channelType: 'daily',
+            relatedFeature: 'daily_spending',
+            metadata: {
+              date: todayDateStr,
+              totalTodaySpent
+            },
+            smsText: SmsService.formatDailySpendingMessage(totalTodaySpent)
+          });
+        }
+      }
+
+      // ========================================================
+      // 6. Category-wise Budget Alerts
       // ========================================================
       if (currentExpense && currentExpense.category && monthlyBudget > 0 && prefs.categoryBudgetAlerts !== false) {
         const cat = currentExpense.category;
         periodAlerts.categories[cat] = periodAlerts.categories[cat] || [];
 
-        // Category weight proportions based on standard Indian expense models
         const categoryWeights = {
           'Food & Dining': 0.25,
           'Rent & Housing': 0.30,
@@ -191,6 +223,7 @@ export class SpendingAlertService {
             message: `You have used ${catPercent.toFixed(0)}% of your planned ${cat} budget (₹${catSpent.toLocaleString('en-IN')} of ₹${catBudget.toLocaleString('en-IN')}).`,
             type: 'warning',
             priority: 'medium',
+            channelType: 'budget',
             relatedFeature: 'category_budget',
             metadata: { category: cat, catSpent, catBudget, catPercent },
             smsText: SmsService.formatCategoryMessage({ category: cat, percent: 75, spent: catSpent, budget: catBudget, overAmount: 0 })
@@ -204,6 +237,7 @@ export class SpendingAlertService {
             message: `You have reached the budget limit for ${cat} (₹${catSpent.toLocaleString('en-IN')} of ₹${catBudget.toLocaleString('en-IN')}).`,
             type: 'critical',
             priority: 'high',
+            channelType: 'budget',
             relatedFeature: 'category_budget',
             metadata: { category: cat, catSpent, catBudget, catPercent },
             smsText: SmsService.formatCategoryMessage({ category: cat, percent: 100, spent: catSpent, budget: catBudget, overAmount: catOver })
@@ -212,7 +246,7 @@ export class SpendingAlertService {
       }
 
       // ========================================================
-      // 6. Intelligent Unusual Spending & Anomaly Detection
+      // 7. Intelligent Unusual Spending & Anomaly Detection
       // ========================================================
       if (currentExpense && (action === 'create' || action === 'update') && prefs.unusualSpendingAlerts !== false) {
         const anomaly = AnomalyService.detectAnomaly(user, currentExpense);
@@ -222,6 +256,7 @@ export class SpendingAlertService {
             message: anomaly.message,
             type: anomaly.severity === 'critical' ? 'critical' : 'warning',
             priority: anomaly.severity || 'high',
+            channelType: 'unusual',
             relatedFeature: 'anomaly',
             metadata: {
               expenseId: currentExpense._id || currentExpense.id,
@@ -239,11 +274,12 @@ export class SpendingAlertService {
       }
 
       // ========================================================
-      // 7. Dispatch Multi-Channel Notifications
+      // 8. Dispatch Multi-Channel Notifications
       // ========================================================
       const createdNotifications = [];
       const smsResults = [];
       const pushResults = [];
+      const emailResults = [];
 
       for (const alert of alertsToTrigger) {
         // A. In-App Notification (Stored in MongoDB)
@@ -266,8 +302,23 @@ export class SpendingAlertService {
           }
         }
 
-        // B. Real SMS Spending Alert
-        if (prefs.smsAlerts === true && user.phoneNumber) {
+        // B. Real SMS Spending Alert (Respecting master & granular preferences)
+        const isSmsEnabled = prefs.smsAlerts === true && user.phoneNumber;
+        let canSendSms = false;
+
+        if (isSmsEnabled) {
+          if (alert.channelType === 'budget' && prefs.smsBudgetAlerts !== false) {
+            canSendSms = true;
+          } else if (alert.channelType === 'daily' && prefs.smsDailyAlerts !== false) {
+            canSendSms = true;
+          } else if (alert.channelType === 'unusual' && prefs.smsUnusualAlerts !== false) {
+            canSendSms = true;
+          } else if (!alert.channelType) {
+            canSendSms = true;
+          }
+        }
+
+        if (canSendSms) {
           try {
             const smsRes = await SmsService.sendSpendingAlert(user.phoneNumber, alert.smsText || alert.message);
             smsResults.push(smsRes);
@@ -276,25 +327,32 @@ export class SpendingAlertService {
           }
         }
 
-        // C. Browser / Mobile Push Notification
-        if (prefs.pushAlerts === true) {
+        // C. Optional Email Alert (Strictly only when user enabled email budget alerts)
+        if (prefs.emailAlerts === true && prefs.emailBudgetAlerts === true && user.email && (alert.priority === 'critical' || alert.priority === 'high')) {
           try {
-            const pushRes = await PushService.sendPushNotification(user, {
-              title: alert.title,
-              body: alert.message,
-              data: {
-                relatedFeature: alert.relatedFeature,
-                metadata: alert.metadata
-              }
+            const emailRes = await SendMail({
+              email: user.email,
+              subject: `Arua Finance — ${alert.title}`,
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #070b14; color: #fff; padding: 24px; border-radius: 12px;">
+                  <h2 style="color: #38bdf8; margin-top: 0;">Arua Finance Financial Alert</h2>
+                  <p style="font-size: 14px; color: #cbd5e1;">Hi ${user.name || "Investor"},</p>
+                  <div style="background: #0f172a; padding: 16px; border-radius: 8px; border-left: 4px solid #ef4444; margin: 16px 0;">
+                    <p style="margin: 0; font-size: 15px; font-weight: bold; color: #f87171;">${alert.title}</p>
+                    <p style="margin: 8px 0 0 0; font-size: 13px; color: #94a3b8;">${alert.message}</p>
+                  </div>
+                  <p style="font-size: 12px; color: #64748b;">This notification was sent based on your email preferences in Arua Finance.</p>
+                </div>
+              `
             });
-            pushResults.push(pushRes);
-          } catch (pushErr) {
-            console.warn('[SpendingAlertService] Push dispatch warning:', pushErr.message);
+            emailResults.push(emailRes);
+          } catch (mailErr) {
+            console.warn('[SpendingAlertService] Email alert dispatch warning:', mailErr.message);
           }
         }
       }
 
-      // 8. Save updated triggered alerts tracking to User document
+      // 9. Save updated triggered alerts tracking to User document
       user.markModified('triggeredAlerts');
       await user.save();
 
@@ -302,7 +360,7 @@ export class SpendingAlertService {
         alertSummary: alertsToTrigger,
         createdNotifications,
         smsResults,
-        pushResults
+        emailResults
       };
     } catch (pipelineErr) {
       console.error('[SpendingAlertService] Unexpected error in alert pipeline:', pipelineErr);

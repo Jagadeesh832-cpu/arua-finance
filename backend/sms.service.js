@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Real SMS Spending Alert Service for Arua Finance
  * Dispatches real transactional SMS alerts to verified Indian mobile numbers via 2Factor.in SMS Gateway.
  */
@@ -99,19 +99,33 @@ export class SmsService {
     const r = Number(remaining || 0).toLocaleString('en-IN');
     const o = Number(overAmount || 0).toLocaleString('en-IN');
 
-    if (threshold >= 100 || overAmount > 0) {
-      return `ARUA FINANCE CRITICAL ALERT\nYou have exceeded your monthly budget.\nBudget: Rs.${b}\nSpent: Rs.${s}\nOver Limit: Rs.${o}\nPlease review your expenses in Arua Finance.`;
+    if (overAmount > 0) {
+      return `ARUA FINANCE CRITICAL ALERT: You have exceeded your monthly budget by ₹${o}.`;
+    }
+
+    if (threshold >= 100) {
+      return `ARUA FINANCE ALERT: You have reached your monthly spending limit.`;
     }
 
     if (threshold === 90) {
-      return `ARUA FINANCE WARNING\nYou have used 90% of your monthly budget (Rs.${s}/Rs.${b}). Only Rs.${r} remains. Please control your discretionary spending.`;
+      return `ARUA FINANCE WARNING: You have used 90% of your monthly budget. Please control your spending.`;
     }
 
     if (threshold === 75) {
-      return `ARUA FINANCE ALERT\nYou have used 75% of your monthly budget (Rs.${s}/Rs.${b}). Remaining budget: Rs.${r}.`;
+      return `ARUA FINANCE ALERT: You have used 75% of your monthly budget.`;
     }
 
-    return `ARUA FINANCE ALERT\nYou have used 50% of your monthly budget.\nBudget: Rs.${b} | Spent: Rs.${s} | Remaining: Rs.${r}`;
+    return `ARUA FINANCE ALERT: You have used 50% of your monthly budget (₹${s} of ₹${b}). Remaining: ₹${r}.`;
+  }
+
+  static formatDailySpendingMessage(spentToday) {
+    const s = Number(spentToday || 0).toLocaleString('en-IN');
+    return `ARUA FINANCE: You spent ₹${s} today.`;
+  }
+
+  static formatAnomalyMessage({ amount, description }) {
+    const a = Number(amount || 0).toLocaleString('en-IN');
+    return `ARUA FINANCE ALERT: An unusual expense of ₹${a} was recorded. Please review your recent expenses.`;
   }
 
   static formatCategoryMessage({ category, percent, spent, budget, overAmount }) {
@@ -120,14 +134,9 @@ export class SmsService {
     const o = Number(overAmount || 0).toLocaleString('en-IN');
 
     if (overAmount > 0) {
-      return `ARUA FINANCE ALERT\nYou exceeded your ${category} budget by Rs.${o} (Spent: Rs.${s}, Budget: Rs.${b}).`;
+      return `ARUA FINANCE ALERT: You exceeded your ${category} budget by ₹${o} (Spent: ₹${s}, Budget: ₹${b}).`;
     }
-    return `ARUA FINANCE ALERT\nYou have used ${percent}% of your ${category} budget (Spent: Rs.${s} of Rs.${b}).`;
-  }
-
-  static formatAnomalyMessage({ amount, description }) {
-    const a = Number(amount || 0).toLocaleString('en-IN');
-    return `ARUA FINANCE SECURITY ALERT\nAn unusual expense of Rs.${a} (${description}) was recorded.\nPlease review your recent transactions in Arua Finance.`;
+    return `ARUA FINANCE ALERT: You have used ${percent}% of your ${category} budget (Spent: ₹${s} of ₹${b}).`;
   }
 }
 

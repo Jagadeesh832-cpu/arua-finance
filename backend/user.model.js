@@ -71,6 +71,7 @@ const expenseSchema = new Schema({
 
 const userSchema = new Schema(
   {
+    // Legacy fields preserved for existing database compatibility
     firstName: {
       type: String,
       trim: true
@@ -79,6 +80,7 @@ const userSchema = new Schema(
       type: String,
       trim: true
     },
+    // Primary unified Name field
     name: {
       type: String,
       required: true,
@@ -116,6 +118,14 @@ const userSchema = new Schema(
       type: Date,
       select: false
     },
+    emailResetOtpHash: {
+      type: String,
+      select: false
+    },
+    emailResetOtpExpires: {
+      type: Date,
+      select: false
+    },
     phoneVerified: {
       type: Boolean,
       default: false
@@ -124,14 +134,29 @@ const userSchema = new Schema(
       type: Date
     },
     notificationPreferences: {
+      // Delivery Channels
       inAppAlerts: { type: Boolean, default: true },
       pushAlerts: { type: Boolean, default: false },
-      smsAlerts: { type: Boolean, default: false },
-      emailAlerts: { type: Boolean, default: true },
+      smsAlerts: { type: Boolean, default: false }, // Master SMS Spending Alerts switch
+      emailAlerts: { type: Boolean, default: true }, // Master Email switch
+
+      // Granular SMS Preferences
+      smsBudgetAlerts: { type: Boolean, default: true },
+      smsDailyAlerts: { type: Boolean, default: true },
+      smsUnusualAlerts: { type: Boolean, default: true },
+
+      // Granular Email Preferences
+      emailSecurityAlerts: { type: Boolean, default: true },
+      emailBudgetAlerts: { type: Boolean, default: false },
+      emailMonthlyReportAlerts: { type: Boolean, default: false },
+      emailAiRecommendationAlerts: { type: Boolean, default: false },
+
+      // Alert Triggers
       budgetThresholdAlerts: { type: Boolean, default: true },
       budgetExceededAlerts: { type: Boolean, default: true },
       categoryBudgetAlerts: { type: Boolean, default: true },
       unusualSpendingAlerts: { type: Boolean, default: true },
+      dailySpendingAlerts: { type: Boolean, default: true },
       goalMilestoneAlerts: { type: Boolean, default: true },
       monthlyReportAlerts: { type: Boolean, default: true },
       aiRecommendationAlerts: { type: Boolean, default: true },

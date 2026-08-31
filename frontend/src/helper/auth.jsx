@@ -20,8 +20,7 @@ export function useRajAuth() {
 
   // Registration & OTP Data
   const [signUpData, setSignUpData] = useState({
-    firstName: "",
-    lastName: "",
+    name: "",
     email: "",
     phoneNumber: "",
     password: "",
@@ -323,7 +322,45 @@ export function useRajAuth() {
   };
 
   /**
-   * Request Password Reset Email Link
+   * Request Password Reset Email OTP
+   */
+  const forgotPasswordEmailOtp = async (email) => {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/auth/forgot-password-email-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      return data;
+    } catch (error) {
+      console.error("forgotPasswordEmailOtp error:", error);
+      return { success: false, message: "Network error requesting email OTP." };
+    }
+  };
+
+  /**
+   * Verify Email OTP and get Reset Token
+   */
+  const verifyForgotPasswordEmailOtp = async ({ email, otp }) => {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/auth/forgot-password-email-verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, otp })
+      });
+      const data = await res.json();
+      return data;
+    } catch (error) {
+      console.error("verifyForgotPasswordEmailOtp error:", error);
+      return { success: false, message: "Network error verifying email OTP." };
+    }
+  };
+
+  /**
+   * Request Password Reset Email Link (fallback)
    */
   const forgotPassword = async (email) => {
     try {
@@ -342,7 +379,45 @@ export function useRajAuth() {
   };
 
   /**
-   * Reset Password with Token
+   * Request Password Reset Mobile OTP
+   */
+  const forgotPasswordPhone = async (phoneNumber) => {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/auth/forgot-password-phone-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phoneNumber })
+      });
+      const data = await res.json();
+      return data;
+    } catch (error) {
+      console.error("forgotPasswordPhone error:", error);
+      return { success: false, message: "Network error requesting phone OTP." };
+    }
+  };
+
+  /**
+   * Verify Mobile OTP and get Reset Token
+   */
+  const verifyForgotPasswordPhoneOtp = async ({ phoneNumber, sessionId, otp }) => {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/auth/forgot-password-phone-verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phoneNumber, sessionId, otp })
+      });
+      const data = await res.json();
+      return data;
+    } catch (error) {
+      console.error("verifyForgotPasswordPhoneOtp error:", error);
+      return { success: false, message: "Network error verifying OTP." };
+    }
+  };
+
+  /**
+   * Reset Password with Token (Used for both Email link and Phone OTP reset)
    */
   const resetPassword = async (token, password, confirmPassword) => {
     try {
@@ -463,8 +538,11 @@ export function useRajAuth() {
     setOtpError,
     resendCooldown,
     signInUser,
-    registerUser,
     forgotPassword,
+    forgotPasswordEmailOtp,
+    verifyForgotPasswordEmailOtp,
+    forgotPasswordPhone,
+    verifyForgotPasswordPhoneOtp,
     resetPassword,
     changePassword,
     startSignUpOtp,

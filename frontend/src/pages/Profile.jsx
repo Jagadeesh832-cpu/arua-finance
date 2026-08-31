@@ -64,11 +64,19 @@ const Profile = () => {
     inAppAlerts: true,
     pushAlerts: false,
     smsAlerts: false,
+    smsBudgetAlerts: true,
+    smsDailyAlerts: true,
+    smsUnusualAlerts: true,
     emailAlerts: true,
+    emailSecurityAlerts: true,
+    emailBudgetAlerts: false,
+    emailMonthlyReportAlerts: false,
+    emailAiRecommendationAlerts: false,
     budgetThresholdAlerts: true,
     budgetExceededAlerts: true,
     categoryBudgetAlerts: true,
     unusualSpendingAlerts: true,
+    dailySpendingAlerts: true,
     goalMilestoneAlerts: true,
     monthlyReportAlerts: true,
     aiRecommendationAlerts: true,
@@ -122,7 +130,7 @@ const Profile = () => {
     try {
       const updatedData = {
         ...LoggedInUserData,
-        name: formData.name,
+        name: formData.name.trim(),
         annualIncome: Number(formData.annualIncome) || 0,
         age: Number(formData.age) || 24,
         monthlyBudget: Number(formData.monthlyBudget) || 0,
@@ -181,6 +189,10 @@ const Profile = () => {
           notificationPreferences: prefState
         });
       }
+      toast({
+        title: "Alert Preferences Saved",
+        description: "Your SMS, Email, and in-app notification preferences are now active."
+      });
     } finally {
       setIsSavingPrefs(false);
     }
@@ -449,123 +461,233 @@ const Profile = () => {
               </CardDescription>
             </CardHeader>
 
-            <CardContent className="p-6 space-y-5">
-              {/* Delivery Channels */}
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3 flex items-center gap-1.5">
-                  <Sliders className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>1. Delivery Channels</span>
-                </h4>
+            <CardContent className="p-6 space-y-6">
+              {/* ======================================================== */}
+              {/* SECTION A: SMS SPENDING ALERTS (+91)                     */}
+              {/* ======================================================== */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                    <Smartphone className="w-4 h-4 text-emerald-400" />
+                    <span>A. SMS Alerts (Transactional SMS via 2Factor)</span>
+                  </h4>
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    {LoggedInUserData?.phoneNumber ? LoggedInUserData.phoneNumber : "No mobile registered"}
+                  </span>
+                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  {/* In-App Alerts */}
-                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/90 flex items-start justify-between space-x-2">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center space-x-1.5 font-bold text-white">
-                        <Bell className="w-3.5 h-3.5 text-blue-400" />
-                        <span>In-App Notifications</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400">
-                        Persistent bell alerts & ledger history in your cockpit.
-                      </p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={prefState.inAppAlerts !== false}
-                      onChange={() => handleTogglePref("inAppAlerts")}
-                      className="w-4 h-4 accent-blue-600 rounded cursor-pointer mt-0.5"
-                    />
-                  </div>
-
-                  {/* Browser Push */}
-                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/90 flex items-start justify-between space-x-2">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center space-x-1.5 font-bold text-white">
-                        <Radio className="w-3.5 h-3.5 text-purple-400" />
-                        <span>Browser & Mobile Push</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400">
-                        System notifications even while app is running in background.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handlePushToggle}
-                        className="text-[10px] font-bold text-cyan-400 hover:underline pt-0.5 block"
-                      >
-                        {pushPermissionStatus === "granted"
-                          ? "✓ Permission Granted (Re-test)"
-                          : "Enable Browser Permission"}
-                      </button>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={prefState.pushAlerts === true}
-                      onChange={handlePushToggle}
-                      className="w-4 h-4 accent-purple-600 rounded cursor-pointer mt-0.5"
-                    />
-                  </div>
-
-                  {/* Real SMS Alerts */}
-                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/90 flex items-start justify-between space-x-2">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center space-x-1.5 font-bold text-white">
-                        <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Real SMS Alerts (+91)</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400">
-                        Direct transactional SMS to your verified Indian mobile number.
-                      </p>
-                      <span className="inline-block text-[10px] font-bold text-emerald-400 pt-0.5">
-                        {LoggedInUserData?.phoneNumber
-                          ? `✓ Verified (${LoggedInUserData.phoneNumber})`
-                          : "No phone registered"}
+                {/* Master SMS Switch */}
+                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-emerald-500/30 flex items-start justify-between space-x-3">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center space-x-1.5 font-bold text-white text-xs">
+                      <span>SMS Alerts Master Switch</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                        prefState.smsAlerts ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-slate-800 text-slate-400"
+                      }`}>
+                        {prefState.smsAlerts ? "ON" : "OFF"}
                       </span>
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={prefState.smsAlerts === true}
-                      onChange={() => handleTogglePref("smsAlerts")}
-                      disabled={!LoggedInUserData?.phoneNumber}
-                      className="w-4 h-4 accent-emerald-600 rounded cursor-pointer mt-0.5 disabled:opacity-40"
-                    />
+                    <p className="text-[11px] text-slate-400">
+                      Enable or disable all real SMS spending alerts delivered to your phone.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={prefState.smsAlerts === true}
+                    onChange={() => handleTogglePref("smsAlerts")}
+                    disabled={!LoggedInUserData?.phoneNumber}
+                    className="w-4 h-4 accent-emerald-600 rounded cursor-pointer mt-0.5 disabled:opacity-40"
+                  />
+                </div>
+
+                {/* Granular SMS Options */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
+                  <div className={`p-3 rounded-xl border transition-all ${
+                    prefState.smsAlerts ? "bg-slate-950/60 border-slate-800/90" : "bg-slate-950/30 border-slate-900 opacity-50"
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-200">Budget Alerts</span>
+                      <input
+                        type="checkbox"
+                        checked={prefState.smsBudgetAlerts !== false}
+                        onChange={() => handleTogglePref("smsBudgetAlerts")}
+                        disabled={!prefState.smsAlerts}
+                        className="w-3.5 h-3.5 accent-emerald-600 rounded cursor-pointer"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      50%, 75%, 90%, 100%, and over-budget threshold SMS.
+                    </p>
                   </div>
 
-                  {/* Email Alerts */}
-                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/90 flex items-start justify-between space-x-2">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center space-x-1.5 font-bold text-white">
-                        <Send className="w-3.5 h-3.5 text-cyan-400" />
-                        <span>Email Summaries</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400">
-                        Detailed email dossiers when spending reaches limits.
-                      </p>
+                  <div className={`p-3 rounded-xl border transition-all ${
+                    prefState.smsAlerts ? "bg-slate-950/60 border-slate-800/90" : "bg-slate-950/30 border-slate-900 opacity-50"
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-200">Daily Spending</span>
+                      <input
+                        type="checkbox"
+                        checked={prefState.smsDailyAlerts !== false}
+                        onChange={() => handleTogglePref("smsDailyAlerts")}
+                        disabled={!prefState.smsAlerts}
+                        className="w-3.5 h-3.5 accent-emerald-600 rounded cursor-pointer"
+                      />
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={prefState.emailAlerts !== false}
-                      onChange={() => handleTogglePref("emailAlerts")}
-                      className="w-4 h-4 accent-cyan-600 rounded cursor-pointer mt-0.5"
-                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      1 summary SMS per day when spending crosses meaningful amount.
+                    </p>
+                  </div>
+
+                  <div className={`p-3 rounded-xl border transition-all ${
+                    prefState.smsAlerts ? "bg-slate-950/60 border-slate-800/90" : "bg-slate-950/30 border-slate-900 opacity-50"
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-200">Unusual Spending</span>
+                      <input
+                        type="checkbox"
+                        checked={prefState.smsUnusualAlerts !== false}
+                        onChange={() => handleTogglePref("smsUnusualAlerts")}
+                        disabled={!prefState.smsAlerts}
+                        className="w-3.5 h-3.5 accent-emerald-600 rounded cursor-pointer"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Statistically irregular single expenses vs history.
+                    </p>
                   </div>
                 </div>
               </div>
 
-              {/* Alert Triggers & Thresholds */}
-              <div className="pt-2 border-t border-slate-800/70">
+              {/* ======================================================== */}
+              {/* SECTION B: EMAIL ALERTS & REPORTS                        */}
+              {/* ======================================================== */}
+              <div className="space-y-3 pt-3 border-t border-slate-800/70">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                    <Send className="w-4 h-4 text-cyan-400" />
+                    <span>B. Email Alerts (Nodemailer Service)</span>
+                  </h4>
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    {LoggedInUserData?.email ? LoggedInUserData.email : "No email registered"}
+                  </span>
+                </div>
+
+                {/* Master Email Switch */}
+                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-cyan-500/30 flex items-start justify-between space-x-3">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center space-x-1.5 font-bold text-white text-xs">
+                      <span>Email Alerts Master Switch</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                        prefState.emailAlerts ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30" : "bg-slate-800 text-slate-400"
+                      }`}>
+                        {prefState.emailAlerts ? "ON" : "OFF"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Enable or disable automated email digests and advisories.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={prefState.emailAlerts !== false}
+                    onChange={() => handleTogglePref("emailAlerts")}
+                    className="w-4 h-4 accent-cyan-600 rounded cursor-pointer mt-0.5"
+                  />
+                </div>
+
+                {/* Granular Email Options */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 text-xs">
+                  <div className={`p-3 rounded-xl border transition-all ${
+                    prefState.emailAlerts ? "bg-slate-950/60 border-slate-800/90" : "bg-slate-950/30 border-slate-900 opacity-50"
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-200">Security Emails</span>
+                      <input
+                        type="checkbox"
+                        checked={prefState.emailSecurityAlerts !== false}
+                        onChange={() => handleTogglePref("emailSecurityAlerts")}
+                        disabled={!prefState.emailAlerts}
+                        className="w-3.5 h-3.5 accent-cyan-600 rounded cursor-pointer"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Password reset links and important account security notices.
+                    </p>
+                  </div>
+
+                  <div className={`p-3 rounded-xl border transition-all ${
+                    prefState.emailAlerts ? "bg-slate-950/60 border-slate-800/90" : "bg-slate-950/30 border-slate-900 opacity-50"
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-200">Budget Emails</span>
+                      <input
+                        type="checkbox"
+                        checked={prefState.emailBudgetAlerts === true}
+                        onChange={() => handleTogglePref("emailBudgetAlerts")}
+                        disabled={!prefState.emailAlerts}
+                        className="w-3.5 h-3.5 accent-cyan-600 rounded cursor-pointer"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Detailed email dossiers when spending crosses critical limit.
+                    </p>
+                  </div>
+
+                  <div className={`p-3 rounded-xl border transition-all ${
+                    prefState.emailAlerts ? "bg-slate-950/60 border-slate-800/90" : "bg-slate-950/30 border-slate-900 opacity-50"
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-200">Monthly Report Emails</span>
+                      <input
+                        type="checkbox"
+                        checked={prefState.emailMonthlyReportAlerts === true}
+                        onChange={() => handleTogglePref("emailMonthlyReportAlerts")}
+                        disabled={!prefState.emailAlerts}
+                        className="w-3.5 h-3.5 accent-cyan-600 rounded cursor-pointer"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Automated end-of-month financial health executive summaries.
+                    </p>
+                  </div>
+
+                  <div className={`p-3 rounded-xl border transition-all ${
+                    prefState.emailAlerts ? "bg-slate-950/60 border-slate-800/90" : "bg-slate-950/30 border-slate-900 opacity-50"
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-200">AI Recommendations</span>
+                      <input
+                        type="checkbox"
+                        checked={prefState.emailAiRecommendationAlerts === true}
+                        onChange={() => handleTogglePref("emailAiRecommendationAlerts")}
+                        disabled={!prefState.emailAlerts}
+                        className="w-3.5 h-3.5 accent-cyan-600 rounded cursor-pointer"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Personalized tax-saving (80C) and portfolio optimization tips.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ======================================================== */}
+              {/* SECTION C: SPENDING TRIGGERS & THRESHOLDS                */}
+              {/* ======================================================== */}
+              <div className="pt-3 border-t border-slate-800/70">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3 flex items-center gap-1.5">
                   <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-                  <span>2. Spending Triggers & Thresholds</span>
+                  <span>C. Budget Threshold Checkpoints</span>
                 </h4>
 
-                {/* Threshold Pills */}
+                {/* Threshold Checkpoint Pills */}
                 <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/90 space-y-2 mb-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-200">
-                      Budget Utilization Checkpoints
+                      Select Active Spending Limit Alerts:
                     </span>
                     <span className="text-[10px] text-slate-400">
-                      Dispatches once per monthly period (Zero duplicates)
+                      Dispatches once per month (Strict duplicate prevention)
                     </span>
                   </div>
 
@@ -594,65 +716,20 @@ const Profile = () => {
                   </div>
                 </div>
 
-                {/* Additional Triggers */}
-                <div className="space-y-2 text-xs">
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/50 border border-slate-800/70">
+                {/* In-App Notifications Ledger */}
+                <div className="text-xs">
+                  <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/70 flex items-start justify-between space-x-2">
                     <div className="space-y-0.5">
-                      <span className="font-bold text-slate-200">Critical Over-Budget Warnings</span>
-                      <p className="text-[11px] text-slate-400">
-                        Dispatches immediately when expenditures exceed 100% of planned monthly budget.
+                      <span className="font-bold text-slate-200">In-App Notification Ledger</span>
+                      <p className="text-[10px] text-slate-400">
+                        Cockpit alerts, ledger history, and financial anomaly banners.
                       </p>
                     </div>
                     <input
                       type="checkbox"
-                      checked={prefState.budgetExceededAlerts !== false}
-                      onChange={() => handleTogglePref("budgetExceededAlerts")}
-                      className="w-4 h-4 accent-rose-600 rounded cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/50 border border-slate-800/70">
-                    <div className="space-y-0.5">
-                      <span className="font-bold text-slate-200">Category Budget Limits</span>
-                      <p className="text-[11px] text-slate-400">
-                        Tracks 75% & 100% limits for Food, Housing, Utilities, and custom categories.
-                      </p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={prefState.categoryBudgetAlerts !== false}
-                      onChange={() => handleTogglePref("categoryBudgetAlerts")}
-                      className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/50 border border-slate-800/70">
-                    <div className="space-y-0.5">
-                      <span className="font-bold text-slate-200">Intelligent Unusual Spending Anomaly Detection</span>
-                      <p className="text-[11px] text-slate-400">
-                        Flags statistically high-value single transactions (3x historical average) or velocity bursts.
-                      </p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={prefState.unusualSpendingAlerts !== false}
-                      onChange={() => handleTogglePref("unusualSpendingAlerts")}
-                      className="w-4 h-4 accent-amber-600 rounded cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/50 border border-slate-800/70">
-                    <div className="space-y-0.5">
-                      <span className="font-bold text-slate-200">Goal Milestones & Monthly Report Alerts</span>
-                      <p className="text-[11px] text-slate-400">
-                        Notifies upon goal milestone completion and when monthly AI wealth reports are generated.
-                      </p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={prefState.goalMilestoneAlerts !== false}
-                      onChange={() => handleTogglePref("goalMilestoneAlerts")}
-                      className="w-4 h-4 accent-cyan-600 rounded cursor-pointer"
+                      checked={prefState.inAppAlerts !== false}
+                      onChange={() => handleTogglePref("inAppAlerts")}
+                      className="w-3.5 h-3.5 accent-blue-600 rounded cursor-pointer mt-0.5"
                     />
                   </div>
                 </div>

@@ -1,4 +1,4 @@
-﻿import mongoose, { Schema } from "mongoose";
+import mongoose, { Schema } from "mongoose";
 
 const notificationSchema = new Schema(
   {
@@ -40,6 +40,7 @@ const notificationSchema = new Schema(
         "budget",
         "category_budget",
         "anomaly",
+        "daily_spending",
         "goal",
         "report",
         "health_score",

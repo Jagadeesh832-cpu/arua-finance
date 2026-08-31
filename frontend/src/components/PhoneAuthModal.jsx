@@ -45,7 +45,6 @@ export default function PhoneAuthModal() {
     setOtpError,
     resendCooldown,
     signInUser,
-    registerUser,
     startSignUpOtp,
     verifySignUpOtp,
     resendSignUpOtp
@@ -60,8 +59,7 @@ export default function PhoneAuthModal() {
 
   // Sign Up Form States
   const [signUpForm, setSignUpForm] = useState({
-    firstName: "",
-    lastName: "",
+    name: "",
     email: "",
     phoneNumber: "",
     password: "",
@@ -133,8 +131,9 @@ export default function PhoneAuthModal() {
   // Validate Sign Up Form Fields
   const validateSignUpForm = () => {
     const errors = {};
-    if (!signUpForm.firstName.trim()) errors.firstName = "First name is required.";
-    if (!signUpForm.lastName.trim()) errors.lastName = "Last name is required.";
+    if (!signUpForm.name.trim()) {
+      errors.name = "Please enter your name.";
+    }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!signUpForm.email.trim()) {
@@ -175,8 +174,7 @@ export default function PhoneAuthModal() {
 
     const cleanPhone = signUpForm.phoneNumber.replace(/\D/g, "");
     await startSignUpOtp({
-      firstName: signUpForm.firstName.trim(),
-      lastName: signUpForm.lastName.trim(),
+      name: signUpForm.name.trim(),
       email: signUpForm.email.toLowerCase().trim(),
       phoneNumber: `+91${cleanPhone}`,
       password: signUpForm.password,
@@ -282,7 +280,7 @@ export default function PhoneAuthModal() {
             {/* =============================== */}
             {authTab === "signin" && (
               <form onSubmit={handleSignInSubmit} className="space-y-4">
-                {/* Secondary Method Tabs: 📱 Mobile | ✉️ Email */}
+                {/* Secondary Method Tabs: ✉️ Email | 📱 Mobile */}
                 <div className="flex items-center space-x-2 p-1 bg-slate-900/80 rounded-xl border border-slate-800 text-xs">
                   <button
                     type="button"
@@ -442,46 +440,28 @@ export default function PhoneAuthModal() {
             {/* =============================== */}
             {authTab === "signup" && (
               <form onSubmit={handleSignUpSubmit} className="space-y-3.5 max-h-[65vh] overflow-y-auto pr-1 scrollbar-none">
-                {/* Names Grid */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-semibold text-slate-300">First Name</label>
+                {/* Single Name Field */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-slate-300">Name</label>
+                  <div className="relative">
                     <Input
                       ref={firstInputRef}
                       type="text"
-                      placeholder="Jagadeesh"
-                      value={signUpForm.firstName}
+                      placeholder="Enter your name"
+                      value={signUpForm.name}
                       onChange={(e) => {
-                        setSignUpForm({ ...signUpForm, firstName: e.target.value });
-                        if (fieldErrors.firstName) setFieldErrors({ ...fieldErrors, firstName: "" });
+                        setSignUpForm({ ...signUpForm, name: e.target.value });
+                        if (fieldErrors.name) setFieldErrors({ ...fieldErrors, name: "" });
                       }}
                       required
                       disabled={isSendingOtp}
-                      className="h-10 rounded-xl bg-slate-950/80 border-slate-800 text-white placeholder:text-slate-600 text-xs font-medium"
+                      className="h-10 rounded-xl bg-slate-950/80 border-slate-800 text-white placeholder:text-slate-600 pl-9 text-xs font-medium"
                     />
-                    {fieldErrors.firstName && (
-                      <p className="text-[10px] text-rose-400 font-semibold">{fieldErrors.firstName}</p>
-                    )}
+                    <User className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3.5 pointer-events-none" />
                   </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-semibold text-slate-300">Last Name</label>
-                    <Input
-                      type="text"
-                      placeholder="Kumar"
-                      value={signUpForm.lastName}
-                      onChange={(e) => {
-                        setSignUpForm({ ...signUpForm, lastName: e.target.value });
-                        if (fieldErrors.lastName) setFieldErrors({ ...fieldErrors, lastName: "" });
-                      }}
-                      required
-                      disabled={isSendingOtp}
-                      className="h-10 rounded-xl bg-slate-950/80 border-slate-800 text-white placeholder:text-slate-600 text-xs font-medium"
-                    />
-                    {fieldErrors.lastName && (
-                      <p className="text-[10px] text-rose-400 font-semibold">{fieldErrors.lastName}</p>
-                    )}
-                  </div>
+                  {fieldErrors.name && (
+                    <p className="text-[10px] text-rose-400 font-semibold">{fieldErrors.name}</p>
+                  )}
                 </div>
 
                 {/* Email Address */}
@@ -598,54 +578,23 @@ export default function PhoneAuthModal() {
                   </div>
                 </div>
 
-                {/* Submit Buttons: Direct Registration & SMS OTP */}
-                <div className="space-y-2 pt-1">
-                  <Button
-                    type="button"
-                    onClick={async () => {
-                      setAuthError("");
-                      if (!validateSignUpForm()) return;
-                      const cleanPhone = signUpForm.phoneNumber.replace(/\D/g, "");
-                      await registerUser({
-                        firstName: signUpForm.firstName.trim(),
-                        lastName: signUpForm.lastName.trim(),
-                        email: signUpForm.email.toLowerCase().trim(),
-                        phoneNumber: cleanPhone ? `+91${cleanPhone}` : undefined,
-                        password: signUpForm.password,
-                        confirmPassword: signUpForm.confirmPassword
-                      });
-                    }}
-                    disabled={isSubmitting || isSendingOtp}
-                    className="w-full h-10 gradient-bg text-white font-bold rounded-xl shadow-lg shadow-blue-500/25 hover:scale-102 active:scale-98 transition-all text-xs border border-blue-400/30 flex items-center justify-center space-x-2"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
-                        <span>Creating Account...</span>
-                      </>
-                    ) : (
-                      <>
-                        <ShieldCheck className="w-3.5 h-3.5 text-cyan-300" />
-                        <span>Instant Register (Email & Password)</span>
-                      </>
-                    )}
-                  </Button>
-
+                {/* Primary Action Button: Register & Send OTP */}
+                <div className="pt-2">
                   <Button
                     type="submit"
-                    variant="outline"
-                    disabled={isSendingOtp || isSubmitting}
-                    className="w-full h-9 border-slate-800 hover:bg-slate-900 text-slate-300 hover:text-white font-semibold rounded-xl text-xs flex items-center justify-center space-x-1.5"
+                    disabled={isSendingOtp}
+                    className="w-full h-11 gradient-bg text-white font-bold rounded-xl shadow-lg shadow-blue-500/25 hover:scale-102 active:scale-98 transition-all text-xs border border-blue-400/30 flex items-center justify-center space-x-2"
                   >
                     {isSendingOtp ? (
                       <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
-                        <span>Sending SMS OTP...</span>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                        <span>Sending SMS Verification Code...</span>
                       </>
                     ) : (
                       <>
-                        <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
-                        <span>Or Verify via 2Factor Mobile OTP</span>
+                        <Smartphone className="w-3.5 h-3.5 text-cyan-300" />
+                        <span>Register & Send OTP</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </>
                     )}
                   </Button>
