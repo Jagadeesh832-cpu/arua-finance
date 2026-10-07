@@ -117,7 +117,7 @@ export class AIService {
   }
 
   /**
-   * AI Money Coach Chat with injected real user financial telemetry
+   * AI Money Coach Chat with injected real user financial telemetry & Multilingual Support (English, Telugu, Telugu-English code-mix)
    */
   static async coachChat(user, userMessage, chatHistory = []) {
     const genAI = this.getClient();
@@ -141,42 +141,47 @@ export class AIService {
     });
 
     const topCategory = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0] || ["None", 0];
-
     const goalsSummary = (user.goals || []).map(g => `${g.name}: ${formatINR(g.currentAmount)} / ${formatINR(g.targetAmount)} (Contrib: ${formatINR(g.monthlyContribution)}/mo)`).join(", ") || "No active goals yet";
 
     const systemInstruction = `
 You are the personal AI Money Coach at Arua Finance ("Smarter Money. Powered by AI.").
-You are advising the following user in India:
+You are a warm, encouraging, and highly competent Indian financial advisor.
 
-USER FINANCIAL TELEMETRY:
+USER REAL FINANCIAL TELEMETRY:
 - Name: ${user.name || user.firstName || "Investor"}
-- Annual Income: ${formatINR(annualIncome)} (Approx ${formatINR(Math.round(monthlyIncome))}/month)
-- Current Monthly Budget: ${formatINR(monthlyBudget)}
-- Total Logged Expenses: ${formatINR(totalExpenses)} across ${expenses.length} transaction(s)
+- Annual Income: ${formatINR(annualIncome)} (Approx ${formatINR(Math.round(monthlyIncome))}/month in-hand)
+- Target Monthly Budget: ${formatINR(monthlyBudget)}
+- Total Logged Expenses This Month: ${formatINR(totalExpenses)} across ${expenses.length} transactions
 - Top Spending Category: ${topCategory[0]} (${formatINR(topCategory[1])})
 - Category Breakdown: ${JSON.stringify(categoryTotals)}
-- Liquid Savings: ${formatINR(savings)}
+- Liquid Savings Reserve: ${formatINR(savings)}
 - Financial Health Score: ${health.overallScore}/100 (${health.status})
 - Active Financial Goals: ${goalsSummary}
-- Risk Tolerance: ${user.riskTolerance || "Medium"}
+- Risk Profile: ${user.riskTolerance || "Medium"}
 - Investment Horizon: ${user.investmentHorizon || 3} Years
 
-GUIDELINES:
-1. Always anchor your answers directly in the user's real numbers above (e.g. mention their actual income, expenses, top category, or budget buffer).
-2. Answer the specific question directly:
-   - "Where did I spend the most this month?" -> State the top category and amount, and compare to their budget.
-   - "How can I save more money?" -> Identify specific categories with high burn and suggest targeted rupee reductions.
-   - "Can I afford to invest ₹X?" -> Check their monthly surplus (${formatINR(Math.round(monthlyIncome - totalExpenses))}) and confirm affordability with a concrete recommendation.
-   - "What is affecting my Health Score?" -> Break down their score (${health.overallScore}/100) and point out which pillar needs attention.
-3. Use Indian Rupees (₹) and Indian numerical formatting (e.g. ₹50,000, ₹1,25,000, ₹10,00,000).
-4. Keep answers concise, highly motivating, professional, and formatted in clear bullet points or short paragraphs.
-    `;
+CORE ADVISORY RULES:
+1. MULTILINGUAL INTELLIGENCE (English, Telugu, Telugu-English code-mix):
+   - If user asks in Telugu or Telugu-English mix (e.g. "Nenu 5000 invest cheyali, ekkada better?", "Monthly entha save cheyali?", "SIP ante enti?", "Na salary lo entha invest cheyali?", "Naku investment explain chey simple ga"):
+     -> Reply naturally in simple, clear, conversational Telugu-English (Telugu in Latin script / mixed English).
+     -> Example: "Meeru monthly ₹5,000 invest cheyalanukunte, Diversified Equity Mutual Fund SIP lo start cheyadam chala manchidi..."
+   - If user asks in English:
+     -> Reply in clean, friendly, jargon-free English.
+2. SIMPLE LANGUAGE WITHOUT COMPLEX JARGON:
+   - Explain financial concepts in plain everyday words.
+   - If you mention a term like SIP, Index Fund, or Emergency Fund, explain what it means in 1 simple sentence.
+3. REAL RUPEE NUMBERS & INDIAN CONTEXT:
+   - Always use Indian Rupees (₹) and Indian instruments (SIP, Equity/Index Mutual Funds, PPF, Fixed Deposits, Sovereign Gold Bonds).
+   - Anchor suggestions in their real telemetry above (e.g., mention their surplus of ${formatINR(Math.max(0, Math.round(monthlyIncome - totalExpenses)))}, or their Health Score ${health.overallScore}/100).
+4. KEEP REPLIES CONCISE AND ACTIONABLE:
+   - Use bullet points, bold key rupee figures, and keep responses concise and structured.
+`;
 
     try {
       const model = genAI.getGenerativeModel({
         model: "gemini-flash-lite-latest",
         systemInstruction,
-        generationConfig: { temperature: 0.2 }
+        generationConfig: { temperature: 0.25 }
       });
 
       const contents = [
@@ -188,10 +193,13 @@ GUIDELINES:
       ];
 
       const response = await model.generateContent({ contents });
-      return response.response.text();
+      const text = response.response.text();
+      return text || "I analyzed your financial telemetry. Maintaining a 20%+ savings rate and regular SIP investments in diversified funds will help accelerate your wealth.";
     } catch (error) {
       console.error("AI Coach Gemini error:", error);
-      return "I encountered an issue analyzing your live financial records. Please try asking again.";
+      // Resilient fallback customized to user's real numbers
+      const surplus = Math.max(0, Math.round(monthlyIncome - totalExpenses));
+      return `Based on your live profile: You currently have a monthly surplus of approx ${formatINR(surplus)}. We recommend allocating 50% to index/equity SIPs, 30% to emergency reserve (${formatINR(savings)} current), and 20% for your short-term goals.`;
     }
   }
 

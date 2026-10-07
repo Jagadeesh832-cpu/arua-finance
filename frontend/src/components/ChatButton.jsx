@@ -8,8 +8,9 @@ import remarkGfm from "remark-gfm";
 
 const QUICK_PROMPTS = [
   "💡 Analyze my monthly budget in ₹",
-  "📈 Best 5-year SIP portfolio strategy",
-  "🧮 How to maximize FY 2025-26 tax savings?",
+  "📈 Nenu ₹5000 invest cheyali, ekkada better?",
+  "🧮 Maximize FY 2025-26 tax savings",
+  "📊 Monthly entha save cheyali?",
   "🛡️ Emergency reserve fund calculation"
 ];
 
