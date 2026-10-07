@@ -1,7 +1,6 @@
 import { Notification } from './notification.model.js';
 import { AnomalyService } from './anomaly.service.js';
 import { SmsService } from './sms.service.js';
-import { PushService } from './push.service.js';
 import { SendMail } from './sendMail.controller.js';
 
 /**
@@ -25,16 +24,28 @@ export class SpendingAlertService {
       const periodKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
       const todayDateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
 
+      const allExpenses = user.expenses || [];
+
       // 1. Calculate user's actual spending for current month & today
-      const monthExpenses = (user.expenses || []).filter(e => {
+      const monthExpenses = allExpenses.filter(e => {
         const d = new Date(e.date || Date.now());
         return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
       });
 
-      const todayExpenses = (user.expenses || []).filter(e => {
+      const todayExpenses = allExpenses.filter(e => {
         const d = new Date(e.date || Date.now());
         return d.toISOString().split('T')[0] === todayDateStr;
       });
+
+      // 2. Historical 30-day average daily spending calculation
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const past30DayExpenses = allExpenses.filter(e => {
+        const d = new Date(e.date || Date.now());
+        return d >= thirtyDaysAgo && d.toISOString().split('T')[0] !== todayDateStr;
+      });
+      const totalPast30Spent = past30DayExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+      const distinctPastDays = new Set(past30DayExpenses.map(e => new Date(e.date || Date.now()).toISOString().split('T')[0])).size || 1;
+      const averageDailySpent = totalPast30Spent > 0 ? (totalPast30Spent / distinctPastDays) : 1000;
 
       const totalMonthSpent = monthExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
       const totalTodaySpent = todayExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
@@ -43,12 +54,13 @@ export class SpendingAlertService {
       const remainingBudget = Math.max(0, monthlyBudget - totalMonthSpent);
       const overBudgetAmount = Math.max(0, totalMonthSpent - monthlyBudget);
 
-      // 2. Initialize duplicate alert prevention state for this month
+      // 3. Initialize duplicate alert prevention state for this month & today
       user.triggeredAlerts = user.triggeredAlerts || {};
       if (!user.triggeredAlerts[periodKey]) {
         user.triggeredAlerts[periodKey] = {
           thresholds: [],
           dailyAlerts: [],
+          higherDailyAlerts: [],
           categories: {},
           lastOverBudgetAlert: null,
           lastOverBudgetAmount: 0
@@ -57,6 +69,7 @@ export class SpendingAlertService {
       const periodAlerts = user.triggeredAlerts[periodKey];
       periodAlerts.thresholds = periodAlerts.thresholds || [];
       periodAlerts.dailyAlerts = periodAlerts.dailyAlerts || [];
+      periodAlerts.higherDailyAlerts = periodAlerts.higherDailyAlerts || [];
       periodAlerts.categories = periodAlerts.categories || {};
 
       const prefs = user.notificationPreferences || {};
@@ -67,12 +80,11 @@ export class SpendingAlertService {
       const alertsToTrigger = [];
 
       // ========================================================
-      // 3. Check Monthly Overall Budget Thresholds (50%, 75%, 90%, 100%)
+      // 4. Monthly Overall Budget Thresholds (50%, 75%, 90%, 100%)
       // ========================================================
       if (monthlyBudget > 0 && prefs.budgetThresholdAlerts !== false) {
         for (const threshold of activeThresholds) {
           if (budgetUsagePercent >= threshold && !periodAlerts.thresholds.includes(threshold)) {
-            // New threshold crossed!
             periodAlerts.thresholds.push(threshold);
 
             let priority = 'medium';
@@ -89,7 +101,7 @@ export class SpendingAlertService {
               priority = 'high';
               type = 'warning';
               title = 'High Spending Warning: 90% Used';
-              message = `Warning: You have used 90% of your monthly budget. Only ₹${remainingBudget.toLocaleString('en-IN')} remains. Please control your discretionary spending.`;
+              message = `Warning: You have used 90% of your monthly budget. Only ₹${remainingBudget.toLocaleString('en-IN')} remains. Please control your spending.`;
             } else if (threshold >= 100) {
               priority = 'critical';
               type = 'critical';
@@ -123,12 +135,11 @@ export class SpendingAlertService {
         }
 
         // ========================================================
-        // 4. Check Over-Budget Alerts (with Spam Throttling)
+        // 5. Over-Budget Alerts (Strict Throttling)
         // ========================================================
         if (budgetUsagePercent > 100 && prefs.budgetExceededAlerts !== false) {
           const prevOverAmount = Number(periodAlerts.lastOverBudgetAmount) || 0;
           const hasNotAlertedOver = !periodAlerts.lastOverBudgetAlert;
-          // Only re-alert if spending grew by at least ₹500 or 10% of monthly budget
           const hasSignificantIncrease = overBudgetAmount >= (prevOverAmount + Math.max(500, monthlyBudget * 0.1));
 
           if (hasNotAlertedOver || hasSignificantIncrease) {
@@ -166,14 +177,40 @@ export class SpendingAlertService {
       }
 
       // ========================================================
-      // 5. Check Daily Spending Summary Alert (Sensible threshold, 1 SMS per day max)
+      // 6. Higher Than Usual Daily Spending (Compared to 30-Day Avg)
+      // ========================================================
+      if (totalTodaySpent >= 2000 && totalTodaySpent > (averageDailySpent * 1.35) && prefs.unusualSpendingAlerts !== false) {
+        if (!periodAlerts.higherDailyAlerts.includes(todayDateStr)) {
+          periodAlerts.higherDailyAlerts.push(todayDateStr);
+          const percentHigher = Math.round(((totalTodaySpent - averageDailySpent) / averageDailySpent) * 100);
+
+          alertsToTrigger.push({
+            title: 'Higher Than Usual Spending',
+            message: `Your spending today (₹${totalTodaySpent.toLocaleString('en-IN')}) is ${percentHigher}% higher than your usual daily spending.`,
+            type: 'warning',
+            priority: 'medium',
+            channelType: 'unusual',
+            relatedFeature: 'daily_spending',
+            metadata: {
+              date: todayDateStr,
+              totalTodaySpent,
+              averageDailySpent,
+              percentHigher
+            },
+            smsText: SmsService.formatHigherSpendingMessage(percentHigher)
+          });
+        }
+      }
+
+      // ========================================================
+      // 7. Daily Spending Summary Notice (1 per day max)
       // ========================================================
       if (totalTodaySpent >= 2500 && prefs.dailySpendingAlerts !== false) {
         if (!periodAlerts.dailyAlerts.includes(todayDateStr)) {
           periodAlerts.dailyAlerts.push(todayDateStr);
           alertsToTrigger.push({
             title: 'Daily Spending Notice',
-            message: `You have spent ₹${totalTodaySpent.toLocaleString('en-IN')} today.`,
+            message: `You spent ₹${totalTodaySpent.toLocaleString('en-IN')} today.`,
             type: 'info',
             priority: 'medium',
             channelType: 'daily',
@@ -188,7 +225,7 @@ export class SpendingAlertService {
       }
 
       // ========================================================
-      // 6. Category-wise Budget Alerts
+      // 8. Category-wise Budget Alerts
       // ========================================================
       if (currentExpense && currentExpense.category && monthlyBudget > 0 && prefs.categoryBudgetAlerts !== false) {
         const cat = currentExpense.category;
@@ -246,7 +283,7 @@ export class SpendingAlertService {
       }
 
       // ========================================================
-      // 7. Intelligent Unusual Spending & Anomaly Detection
+      // 9. Intelligent Unusual Spending & Anomaly Detection
       // ========================================================
       if (currentExpense && (action === 'create' || action === 'update') && prefs.unusualSpendingAlerts !== false) {
         const anomaly = AnomalyService.detectAnomaly(user, currentExpense);
@@ -274,11 +311,10 @@ export class SpendingAlertService {
       }
 
       // ========================================================
-      // 8. Dispatch Multi-Channel Notifications
+      // 10. Dispatch Multi-Channel Notifications
       // ========================================================
       const createdNotifications = [];
       const smsResults = [];
-      const pushResults = [];
       const emailResults = [];
 
       for (const alert of alertsToTrigger) {
@@ -302,7 +338,7 @@ export class SpendingAlertService {
           }
         }
 
-        // B. Real SMS Spending Alert (Respecting master & granular preferences)
+        // B. Real SMS Spending Alert
         const isSmsEnabled = prefs.smsAlerts === true && user.phoneNumber;
         let canSendSms = false;
 
@@ -327,7 +363,7 @@ export class SpendingAlertService {
           }
         }
 
-        // C. Optional Email Alert (Strictly only when user enabled email budget alerts)
+        // C. Optional Email Alert
         if (prefs.emailAlerts === true && prefs.emailBudgetAlerts === true && user.email && (alert.priority === 'critical' || alert.priority === 'high')) {
           try {
             const emailRes = await SendMail({
@@ -352,7 +388,7 @@ export class SpendingAlertService {
         }
       }
 
-      // 9. Save updated triggered alerts tracking to User document
+      // 11. Save updated triggered alerts tracking to User document
       user.markModified('triggeredAlerts');
       await user.save();
 

@@ -104,7 +104,7 @@ export class SmsService {
     }
 
     if (threshold >= 100) {
-      return `ARUA FINANCE ALERT: You have reached your monthly spending limit.`;
+      return `ARUA FINANCE ALERT: You have reached 100% of your monthly budget (₹${b}).`;
     }
 
     if (threshold === 90) {
@@ -123,9 +123,13 @@ export class SmsService {
     return `ARUA FINANCE: You spent ₹${s} today.`;
   }
 
+  static formatHigherSpendingMessage(percentHigher) {
+    return `ARUA FINANCE ALERT: Your spending today is higher than your usual daily spending (${percentHigher}% above average).`;
+  }
+
   static formatAnomalyMessage({ amount, description }) {
     const a = Number(amount || 0).toLocaleString('en-IN');
-    return `ARUA FINANCE ALERT: An unusual expense of ₹${a} was recorded. Please review your recent expenses.`;
+    return `ARUA FINANCE ALERT: An unusual expense of ₹${a} was recorded (${description || 'Discretionary'}). Please review your recent expenses.`;
   }
 
   static formatCategoryMessage({ category, percent, spent, budget, overAmount }) {
