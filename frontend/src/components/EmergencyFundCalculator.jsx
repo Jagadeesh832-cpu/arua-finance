@@ -1,18 +1,14 @@
 import React, { useState } from "react";
 import { useAuth } from "@/helper/auth";
 import { formatINR } from "@/helper/formatters";
+import { calculateEmergencyFund } from "@/helper/financialCalculators";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 import {
   Shield,
   ShieldCheck,
-  ShieldAlert,
-  Sparkles,
   Zap,
-  CheckCircle2,
-  AlertCircle,
   TrendingUp,
   Wallet
 } from "lucide-react";
@@ -24,21 +20,10 @@ export default function EmergencyFundCalculator() {
   const calculatedMonthlySpend = userExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0) || Number(LoggedInUserData?.monthlyExpense) || 25000;
   const initialSavings = Number(LoggedInUserData?.savings) || 50000;
 
-  const [monthlySpend, setMonthlySpend] = useState(calculatedMonthlySpend);
-  const [currentSavings, setCurrentSavings] = useState(initialSavings);
+  const [monthlySpend, setMonthlySpend] = useState(String(calculatedMonthlySpend));
+  const [currentSavings, setCurrentSavings] = useState(String(initialSavings));
 
-  const spend = Number(monthlySpend) || 0;
-  const savings = Number(currentSavings) || 0;
-
-  const min3Months = spend * 3;
-  const rec6Months = spend * 6;
-  const max12Months = spend * 12;
-
-  const progressPct = rec6Months > 0 ? Math.min(100, Math.round((savings / rec6Months) * 100)) : 0;
-  const shortfall = Math.max(0, rec6Months - savings);
-
-  const monthsToGoal12 = Math.round(shortfall / 12);
-  const monthsToGoal6 = Math.round(shortfall / 6);
+  const stats = calculateEmergencyFund(monthlySpend, currentSavings);
 
   return (
     <Card className="arua-card rounded-3xl border-slate-800 shadow-2xl relative overflow-hidden animate-slide-up">
@@ -56,12 +41,12 @@ export default function EmergencyFundCalculator() {
               <span>Emergency Fund Fortress</span>
             </CardTitle>
             <CardDescription className="text-xs text-slate-400 mt-1">
-              Calculate and stress-test your emergency liquidity cushion across 3, 6, and 12-month scenarios.
+              Calculate and stress-test your emergency liquidity cushion across 3, 6, and 12-month scenarios in ₹.
             </CardDescription>
           </div>
 
           <span className="text-xs font-bold text-amber-300 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 self-start sm:self-auto">
-            {progressPct}% of 6-Mo Goal Funded
+            {stats.progressPct}% of 6-Mo Goal Funded
           </span>
         </div>
       </CardHeader>
@@ -74,8 +59,9 @@ export default function EmergencyFundCalculator() {
             <Input
               type="number"
               value={monthlySpend}
-              onChange={(e) => setMonthlySpend(Math.max(0, Number(e.target.value)))}
+              onChange={(e) => setMonthlySpend(e.target.value)}
               className="h-10 rounded-xl bg-slate-900 border-slate-700 text-white font-extrabold text-sm focus-visible:ring-blue-500"
+              placeholder="e.g. 25000"
             />
             <p className="text-[10px] text-slate-500">Rent, Food, EMIs, Utilities</p>
           </div>
@@ -85,8 +71,9 @@ export default function EmergencyFundCalculator() {
             <Input
               type="number"
               value={currentSavings}
-              onChange={(e) => setCurrentSavings(Math.max(0, Number(e.target.value)))}
+              onChange={(e) => setCurrentSavings(e.target.value)}
               className="h-10 rounded-xl bg-slate-900 border-slate-700 text-white font-extrabold text-sm focus-visible:ring-blue-500"
+              placeholder="e.g. 50000"
             />
             <p className="text-[10px] text-slate-500">Easily accessible within 24-48 hours</p>
           </div>
@@ -96,29 +83,29 @@ export default function EmergencyFundCalculator() {
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-400">
-              Current Savings: <strong className="text-white">{formatINR(savings)}</strong>
+              Current Savings: <strong className="text-white">{formatINR(stats.savings)}</strong>
             </span>
             <span className="text-slate-400">
-              6-Month Goal: <strong className="text-amber-300">{formatINR(rec6Months)}</strong>
+              6-Month Goal: <strong className="text-amber-300">{formatINR(stats.rec6Months)}</strong>
             </span>
           </div>
           <div className="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-800">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                progressPct >= 100
+              className={"h-full rounded-full transition-all duration-500 " + (
+                stats.progressPct >= 100
                   ? "bg-gradient-to-r from-emerald-400 to-teal-300"
-                  : progressPct >= 50
+                  : stats.progressPct >= 50
                   ? "bg-gradient-to-r from-amber-500 to-emerald-400"
                   : "bg-gradient-to-r from-rose-500 to-amber-400"
-              }`}
-              style={{ width: `${progressPct}%` }}
+              )}
+              style={{ width: stats.progressPct + "%" }}
             ></div>
           </div>
         </div>
 
         {/* 3 Tier Target Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* 3 Months: Minimum */}
+          {/* 3 Months */}
           <div className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-slate-700 transition-all space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-300">3 Months Minimum</span>
@@ -126,13 +113,13 @@ export default function EmergencyFundCalculator() {
                 Baseline
               </span>
             </div>
-            <div className="text-xl font-extrabold text-white">{formatINR(min3Months)}</div>
+            <div className="text-xl font-extrabold text-white">{formatINR(stats.min3Months)}</div>
             <p className="text-[11px] text-slate-400">
-              {savings >= min3Months ? "✅ Threshold Met" : `⚠️ Needs ${formatINR(min3Months - savings)} more`}
+              {stats.savings >= stats.min3Months ? "✅ Threshold Met" : "⚠️ Needs " + formatINR(stats.min3Months - stats.savings) + " more"}
             </p>
           </div>
 
-          {/* 6 Months: Recommended */}
+          {/* 6 Months */}
           <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-950/40 via-slate-900/80 to-slate-900/90 border border-amber-500/40 space-y-2 shadow-md">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-amber-300">6 Months Recommended</span>
@@ -140,43 +127,42 @@ export default function EmergencyFundCalculator() {
                 Gold Standard
               </span>
             </div>
-            <div className="text-xl font-extrabold text-amber-300">{formatINR(rec6Months)}</div>
+            <div className="text-xl font-extrabold text-amber-300">{formatINR(stats.rec6Months)}</div>
             <p className="text-[11px] text-slate-300">
-              {savings >= rec6Months ? "🎉 Fully Funded & Secure" : `Needs ${formatINR(shortfall)} more`}
+              {stats.isFunded ? "🎉 Fully Funded & Secure" : "Needs " + formatINR(stats.shortfall) + " more"}
             </p>
           </div>
 
-          {/* 12 Months: Fortress */}
+          {/* 12 Months */}
           <div className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-slate-700 transition-all space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-300">12 Months Fortress</span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400">
-                High Security
+                Maximum Shield
               </span>
             </div>
-            <div className="text-xl font-extrabold text-white">{formatINR(max12Months)}</div>
+            <div className="text-xl font-extrabold text-white">{formatINR(stats.max12Months)}</div>
             <p className="text-[11px] text-slate-400">
-              {savings >= max12Months ? "🛡️ Maximum Fortress" : `Gap: ${formatINR(Math.max(0, max12Months - savings))}`}
+              {stats.savings >= stats.max12Months ? "🛡️ Maximum Fortress Achieved" : "Needs " + formatINR(stats.max12Months - stats.savings) + " more"}
             </p>
           </div>
         </div>
 
-        {/* Actionable Plan Box */}
-        {shortfall > 0 && (
-          <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2 text-xs">
-            <div className="flex items-center space-x-2 text-cyan-300 font-bold">
-              <Zap className="w-4 h-4 text-cyan-400" />
-              <span>Recommended Bridging Strategy</span>
-            </div>
-            <p className="text-slate-300 leading-relaxed">
-              To fully fund your 6-month safety reserve of <strong>{formatINR(rec6Months)}</strong>:
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[11px]">
-              <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300">
-                Save <strong className="text-cyan-300">{formatINR(monthsToGoal6)}/month</strong> to reach target in 6 months
+        {/* Actionable Savings Plan if not fully funded */}
+        {!stats.isFunded && (
+          <div className="p-4 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-2">
+            <h4 className="text-xs font-bold text-white flex items-center space-x-1.5">
+              <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Recommended Liquidity Accumulation Pace</span>
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
+                <span className="text-slate-400 block">6-Month Fast Track:</span>
+                <strong className="text-cyan-300 font-extrabold text-sm">{formatINR(stats.monthlySavingsFor6Months)} / month</strong>
               </div>
-              <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300">
-                Save <strong className="text-emerald-300">{formatINR(monthsToGoal12)}/month</strong> to reach target in 12 months
+              <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
+                <span className="text-slate-400 block">12-Month Balanced Plan:</span>
+                <strong className="text-emerald-300 font-extrabold text-sm">{formatINR(stats.monthlySavingsFor12Months)} / month</strong>
               </div>
             </div>
           </div>
