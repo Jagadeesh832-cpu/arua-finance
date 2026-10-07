@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import mongoose from 'mongoose';
+import mongoose from '../backend/node_modules/mongoose/index.js';
 import { normalizeExpense } from '../backend/user.controller.js';
 import { User } from '../backend/user.model.js';
 

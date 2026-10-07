@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import UpdateUserDataFunc from "../helper/UpdateUserDataFunc";
 import { addExpenseApi, updateExpenseApi, deleteExpenseApi } from "@/helper/expenseApi";
 import { formatINR } from "@/helper/formatters";
+import { generateExpensePdf } from "@/helper/generateExpensePdf";
 import {
   Plus,
   Trash2,
@@ -25,7 +26,9 @@ import {
   Wallet,
   Loader2,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  FileText,
+  Download
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -45,6 +48,7 @@ const ExpenseTracker = () => {
 
   const [expenses, setExpenses] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [lastSavedExpense, setLastSavedExpense] = useState(null);
 
   // Form State for Adding
   const [formData, setFormData] = useState({
@@ -115,7 +119,33 @@ const ExpenseTracker = () => {
     return colors[category] || "bg-slate-900 text-slate-300 border-slate-700";
   };
 
-    // Add Expense
+  // Generate PDF Proof for verified saved expense
+  const handleGeneratePdf = (expenseItem) => {
+    try {
+      if (!expenseItem || (!expenseItem._id && !expenseItem.expenseId && !expenseItem.id)) {
+        toast({
+          title: "Cannot generate PDF",
+          description: "Expense has not been confirmed or saved in MongoDB.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const res = generateExpensePdf(expenseItem, LoggedInUserData);
+      toast({
+        title: "PDF Proof Generated",
+        description: `Downloaded ${res.filename} successfully.`
+      });
+    } catch (err) {
+      toast({
+        title: "PDF Generation Error",
+        description: err.message || "Failed to generate expense proof.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Add Expense
   const addExpense = async (e) => {
     e.preventDefault();
 
@@ -159,12 +189,18 @@ const ExpenseTracker = () => {
         }
         setExpenses(result.expenses || [result.expense, ...expenses]);
 
+        // Capture confirmed saved expense from MongoDB
+        const savedRecord = result.expense || (result.expenses && result.expenses[0]);
+        if (savedRecord) {
+          setLastSavedExpense(savedRecord);
+        }
+
         // Reactive notification refresh
         fetchNotifications();
 
         toast({
           title: "Expense logged!",
-          description: `${formatINR(numAmount)} for ${payload.description} recorded.`,
+          description: `${formatINR(numAmount)} for ${payload.description} recorded. Proof available.`,
         });
 
         setFormData({
@@ -237,6 +273,11 @@ const ExpenseTracker = () => {
         setExpenses(result.expenses || expenses);
         fetchNotifications();
 
+        if (lastSavedExpense && (String(lastSavedExpense._id) === String(expenseId) || String(lastSavedExpense.id) === String(expenseId))) {
+          const updated = result.expense || (result.expenses && result.expenses.find(e => String(e._id) === String(expenseId)));
+          if (updated) setLastSavedExpense(updated);
+        }
+
         toast({
           title: "Expense updated",
           description: "Transaction record modified successfully.",
@@ -262,7 +303,7 @@ const ExpenseTracker = () => {
     setIsDeleteModalOpen(true);
   };
 
-    // Perform Delete
+  // Perform Delete
   const handleDeleteExpense = async () => {
     if (!deletingExpenseId) return;
 
@@ -277,6 +318,10 @@ const ExpenseTracker = () => {
         }
         setExpenses(result.expenses || expenses.filter(e => String(e._id) !== String(deletingExpenseId)));
         fetchNotifications();
+
+        if (lastSavedExpense && (String(lastSavedExpense._id) === String(deletingExpenseId) || String(lastSavedExpense.id) === String(deletingExpenseId))) {
+          setLastSavedExpense(null);
+        }
 
         toast({
           title: "Expense removed",
@@ -517,6 +562,35 @@ const ExpenseTracker = () => {
                   )}
                 </Button>
               </form>
+
+              {lastSavedExpense && (
+                <div className="mt-4 p-3.5 rounded-xl bg-slate-900/90 border border-emerald-500/40 flex flex-col gap-2.5 animate-fade-in shadow-md">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span className="text-xs font-bold text-emerald-400">
+                        Saved in MongoDB Atlas
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700">
+                      ID: {String(lastSavedExpense._id || lastSavedExpense.id || "").slice(-8)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-slate-300">
+                    <span className="truncate max-w-[170px] font-medium">{lastSavedExpense.description}</span>
+                    <span className="font-bold text-white">{formatINR(lastSavedExpense.amount)}</span>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => handleGeneratePdf(lastSavedExpense)}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center space-x-2 shadow-md transition-all cursor-pointer"
+                    id="btn-generate-pdf-proof"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-emerald-100" />
+                    <span>Generate PDF Proof</span>
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -612,6 +686,16 @@ const ExpenseTracker = () => {
                         <span className="font-bold text-rose-400 text-sm">
                           -{formatINR(expense.amount)}
                         </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleGeneratePdf(expense)}
+                          className="text-slate-400 hover:text-emerald-400 hover:bg-emerald-950/40 p-1.5 h-8 w-8 rounded-lg transition-colors"
+                          title="Generate PDF Proof"
+                          aria-label="Generate PDF Proof"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
