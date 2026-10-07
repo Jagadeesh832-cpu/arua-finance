@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import UpdateUserDataFunc from "../helper/UpdateUserDataFunc";
+import { addExpenseApi, updateExpenseApi, deleteExpenseApi } from "@/helper/expenseApi";
 import { formatINR } from "@/helper/formatters";
 import {
   Plus,
@@ -114,7 +115,7 @@ const ExpenseTracker = () => {
     return colors[category] || "bg-slate-900 text-slate-300 border-slate-700";
   };
 
-  // Add Expense
+    // Add Expense
   const addExpense = async (e) => {
     e.preventDefault();
 
@@ -127,46 +128,53 @@ const ExpenseTracker = () => {
       return;
     }
 
+    const numAmount = parseFloat(formData.amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      toast({
+        title: "Invalid amount",
+        description: "Please enter a valid positive expense amount.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const newExpense = {
-        _id: `exp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      const identifier = LoggedInUserData.email || LoggedInUserData.phoneNumber;
+      
+      const payload = {
+        identifier,
         description: formData.description.trim(),
-        amount: parseFloat(formData.amount),
+        amount: numAmount,
         category: formData.category,
         paymentMethod: formData.paymentMethod || "UPI",
-        date: formData.date || new Date().toISOString()
+        date: formData.date || new Date().toISOString().split("T")[0]
       };
 
-      const updatedExpenses = [newExpense, ...expenses];
-      const identifier = LoggedInUserData.email || LoggedInUserData.phoneNumber;
-      const result = await UpdateUserDataFunc({
-        email: LoggedInUserData.email,
-        phoneNumber: LoggedInUserData.phoneNumber,
-        identifier,
-        expenses: updatedExpenses
-      });
+      const result = await addExpenseApi(payload);
 
-      if (result) {
-        setLoggedInUserData(result);
-        setExpenses(result.expenses || updatedExpenses);
+      if (result && result.success) {
+        if (result.user) {
+          setLoggedInUserData(result.user);
+        }
+        setExpenses(result.expenses || [result.expense, ...expenses]);
+
+        // Reactive notification refresh
+        fetchNotifications();
+
+        toast({
+          title: "Expense logged!",
+          description: `${formatINR(numAmount)} for ${payload.description} recorded.`,
+        });
+
+        setFormData({
+          description: "",
+          amount: "",
+          category: "Food & Dining",
+          paymentMethod: "UPI",
+          date: new Date().toISOString().split("T")[0]
+        });
       }
-
-      // Reactive notification refresh
-      fetchNotifications();
-
-      toast({
-        title: "Expense logged!",
-        description: `${formatINR(newExpense.amount)} for ${newExpense.description} recorded.`,
-      });
-
-      setFormData({
-        description: "",
-        amount: "",
-        category: "Food & Dining",
-        paymentMethod: "UPI",
-        date: new Date().toISOString().split("T")[0]
-      });
     } catch (err) {
       toast({
         title: "Error adding expense",
@@ -191,50 +199,52 @@ const ExpenseTracker = () => {
     setIsEditModalOpen(true);
   };
 
-  // Save Edited Expense
+    // Save Edited Expense
   const handleSaveEdit = async (e) => {
     e.preventDefault();
     if (!editingExpense) return;
 
+    const numAmount = parseFloat(editFormData.amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      toast({
+        title: "Invalid amount",
+        description: "Please enter a valid positive amount.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const updatedExpenses = expenses.map((exp) => {
-        if (exp._id === editingExpense._id || exp.id === editingExpense.id) {
-          return {
-            ...exp,
-            description: editFormData.description.trim(),
-            amount: parseFloat(editFormData.amount),
-            category: editFormData.category,
-            paymentMethod: editFormData.paymentMethod,
-            date: editFormData.date
-          };
-        }
-        return exp;
-      });
-
       const identifier = LoggedInUserData.email || LoggedInUserData.phoneNumber;
-      const result = await UpdateUserDataFunc({
-        email: LoggedInUserData.email,
-        phoneNumber: LoggedInUserData.phoneNumber,
+      const expenseId = editingExpense._id || editingExpense.expenseId || editingExpense.id;
+
+      const updates = {
         identifier,
-        expenses: updatedExpenses
-      });
+        description: editFormData.description.trim(),
+        amount: numAmount,
+        category: editFormData.category,
+        paymentMethod: editFormData.paymentMethod,
+        date: editFormData.date
+      };
 
-      if (result) {
-        setLoggedInUserData(result);
-        setExpenses(result.expenses || updatedExpenses);
+      const result = await updateExpenseApi(expenseId, updates);
+
+      if (result && result.success) {
+        if (result.user) {
+          setLoggedInUserData(result.user);
+        }
+        setExpenses(result.expenses || expenses);
+        fetchNotifications();
+
+        toast({
+          title: "Expense updated",
+          description: "Transaction record modified successfully.",
+        });
+
+        setIsEditModalOpen(false);
+        setEditingExpense(null);
       }
-
-      // Reactive notification refresh
-      fetchNotifications();
-
-      toast({
-        title: "Expense updated",
-        description: "Transaction record modified successfully.",
-      });
-
-      setIsEditModalOpen(false);
-      setEditingExpense(null);
     } catch (err) {
       toast({
         title: "Update failed",
@@ -252,39 +262,30 @@ const ExpenseTracker = () => {
     setIsDeleteModalOpen(true);
   };
 
-  // Perform Delete
+    // Perform Delete
   const handleDeleteExpense = async () => {
     if (!deletingExpenseId) return;
 
     setIsSubmitting(true);
     try {
-      const updatedExpenses = expenses.filter(
-        (exp) => exp._id !== deletingExpenseId && exp.id !== deletingExpenseId
-      );
-
       const identifier = LoggedInUserData.email || LoggedInUserData.phoneNumber;
-      const result = await UpdateUserDataFunc({
-        email: LoggedInUserData.email,
-        phoneNumber: LoggedInUserData.phoneNumber,
-        identifier,
-        expenses: updatedExpenses
-      });
+      const result = await deleteExpenseApi(deletingExpenseId, identifier);
 
-      if (result) {
-        setLoggedInUserData(result);
-        setExpenses(result.expenses || updatedExpenses);
+      if (result && result.success) {
+        if (result.user) {
+          setLoggedInUserData(result.user);
+        }
+        setExpenses(result.expenses || expenses.filter(e => String(e._id) !== String(deletingExpenseId)));
+        fetchNotifications();
+
+        toast({
+          title: "Expense removed",
+          description: "Transaction successfully deleted from your ledger.",
+        });
+
+        setIsDeleteModalOpen(false);
+        setDeletingExpenseId(null);
       }
-
-      // Reactive notification refresh
-      fetchNotifications();
-
-      toast({
-        title: "Expense removed",
-        description: "Transaction successfully deleted from your ledger.",
-      });
-
-      setIsDeleteModalOpen(false);
-      setDeletingExpenseId(null);
     } catch (err) {
       toast({
         title: "Delete failed",

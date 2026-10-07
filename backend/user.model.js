@@ -42,6 +42,10 @@ const goalSchema = new Schema({
 });
 
 const expenseSchema = new Schema({
+  expenseId: {
+    type: String,
+    trim: true
+  },
   description: {
     type: String,
     required: true,

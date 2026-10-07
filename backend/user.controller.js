@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { User } from './user.model.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -155,6 +156,58 @@ export async function fetchUserByEmail(identifier) {
   return await findUserByIdentifier(identifier);
 }
 
+// Normalize and sanitize expense documents to guarantee 100% CastError immunity
+export function normalizeExpense(rawExp) {
+  if (!rawExp || typeof rawExp !== 'object') return null;
+
+  const amount = Math.max(0, parseFloat(rawExp.amount) || 0);
+  const description = String(rawExp.description || 'Expense').trim();
+  const category = String(rawExp.category || 'Other').trim();
+  const validPaymentMethods = ["UPI", "Cash", "Credit Card", "Debit Card", "Net Banking", "Other"];
+  const paymentMethod = validPaymentMethods.includes(rawExp.paymentMethod) ? rawExp.paymentMethod : "UPI";
+
+  let date = new Date(rawExp.date || Date.now());
+  if (isNaN(date.getTime())) {
+    date = new Date();
+  }
+
+  const normalized = {
+    description,
+    amount,
+    category,
+    paymentMethod,
+    date
+  };
+
+  if (rawExp.expenseId) {
+    normalized.expenseId = String(rawExp.expenseId).trim();
+  }
+
+  // Handle _id safely
+  if (rawExp._id) {
+    const rawIdStr = String(rawExp._id).trim();
+    if (mongoose.Types.ObjectId.isValid(rawIdStr) && String(new mongoose.Types.ObjectId(rawIdStr)) === rawIdStr) {
+      normalized._id = new mongoose.Types.ObjectId(rawIdStr);
+    } else {
+      // It's a custom string ID (e.g. exp_1791400384874_vkifn) -> save to expenseId
+      normalized.expenseId = rawIdStr;
+      normalized._id = new mongoose.Types.ObjectId();
+    }
+  } else if (rawExp.id && !normalized.expenseId) {
+    const rawIdStr = String(rawExp.id).trim();
+    if (mongoose.Types.ObjectId.isValid(rawIdStr) && String(new mongoose.Types.ObjectId(rawIdStr)) === rawIdStr) {
+      normalized._id = new mongoose.Types.ObjectId(rawIdStr);
+    } else {
+      normalized.expenseId = rawIdStr;
+      normalized._id = new mongoose.Types.ObjectId();
+    }
+  } else {
+    normalized._id = new mongoose.Types.ObjectId();
+  }
+
+  return normalized;
+}
+
 // Set (update) user profile values
 export async function updateUserDetails(identifier, updates) {
   if (!identifier) throw new Error("Identifier (email or phone) is required");
@@ -180,6 +233,11 @@ export async function updateUserDetails(identifier, updates) {
   }
   if (filteredUpdates.name) {
     filteredUpdates.name = filteredUpdates.name.trim();
+  }
+  if (filteredUpdates.expenses && Array.isArray(filteredUpdates.expenses)) {
+    filteredUpdates.expenses = filteredUpdates.expenses
+      .map(normalizeExpense)
+      .filter(Boolean);
   }
 
   const clean = String(identifier).trim();
@@ -392,13 +450,31 @@ export async function addExpenseToUser(identifier, expenseData) {
   const user = await findUserByIdentifier(identifier);
   if (!user) throw new Error("User not found");
 
+  if (!expenseData.description || !String(expenseData.description).trim()) {
+    throw new Error("Expense description is required");
+  }
+
+  const amount = parseFloat(expenseData.amount);
+  if (isNaN(amount) || amount <= 0) {
+    throw new Error("Expense amount must be a positive number greater than 0");
+  }
+
+  let date = expenseData.date ? new Date(expenseData.date) : new Date();
+  if (isNaN(date.getTime())) {
+    throw new Error("Invalid date format provided for expense");
+  }
+
+  const validPaymentMethods = ["UPI", "Cash", "Credit Card", "Debit Card", "Net Banking", "Other"];
+  const paymentMethod = validPaymentMethods.includes(expenseData.paymentMethod) ? expenseData.paymentMethod : "UPI";
+
   const newExpense = {
     _id: new mongoose.Types.ObjectId(),
-    description: expenseData.description,
-    amount: Number(expenseData.amount),
-    category: expenseData.category || "Other",
-    paymentMethod: expenseData.paymentMethod || "UPI",
-    date: expenseData.date ? new Date(expenseData.date) : new Date()
+    description: String(expenseData.description).trim(),
+    amount,
+    category: String(expenseData.category || "Other").trim(),
+    paymentMethod,
+    date,
+    ...(expenseData.expenseId ? { expenseId: String(expenseData.expenseId).trim() } : {})
   };
 
   user.expenses = [newExpense, ...(user.expenses || [])];
@@ -410,18 +486,29 @@ export async function updateExpenseInUser(identifier, expenseId, updates) {
   const user = await findUserByIdentifier(identifier);
   if (!user) throw new Error("User not found");
 
+  const targetIdStr = String(expenseId).trim();
   const expenseIndex = (user.expenses || []).findIndex(
-    e => String(e._id) === String(expenseId) || String(e.id) === String(expenseId)
+    e => String(e._id) === targetIdStr || String(e.expenseId) === targetIdStr || String(e.id) === targetIdStr
   );
 
   if (expenseIndex === -1) throw new Error("Expense record not found");
 
   const exp = user.expenses[expenseIndex];
-  if (updates.description !== undefined) exp.description = updates.description;
-  if (updates.amount !== undefined) exp.amount = Number(updates.amount);
-  if (updates.category !== undefined) exp.category = updates.category;
-  if (updates.paymentMethod !== undefined) exp.paymentMethod = updates.paymentMethod;
-  if (updates.date !== undefined) exp.date = new Date(updates.date);
+  if (updates.description !== undefined) exp.description = String(updates.description).trim();
+  if (updates.amount !== undefined) {
+    const amount = parseFloat(updates.amount);
+    if (isNaN(amount) || amount <= 0) throw new Error("Expense amount must be a positive number");
+    exp.amount = amount;
+  }
+  if (updates.category !== undefined) exp.category = String(updates.category).trim();
+  if (updates.paymentMethod !== undefined) {
+    const validPaymentMethods = ["UPI", "Cash", "Credit Card", "Debit Card", "Net Banking", "Other"];
+    exp.paymentMethod = validPaymentMethods.includes(updates.paymentMethod) ? updates.paymentMethod : exp.paymentMethod;
+  }
+  if (updates.date !== undefined) {
+    const d = new Date(updates.date);
+    if (!isNaN(d.getTime())) exp.date = d;
+  }
 
   user.markModified('expenses');
   await user.save();
@@ -432,8 +519,9 @@ export async function deleteExpenseFromUser(identifier, expenseId) {
   const user = await findUserByIdentifier(identifier);
   if (!user) throw new Error("User not found");
 
+  const targetIdStr = String(expenseId).trim();
   user.expenses = (user.expenses || []).filter(
-    e => String(e._id) !== String(expenseId) && String(e.id) !== String(expenseId)
+    e => String(e._id) !== targetIdStr && String(e.expenseId) !== targetIdStr && String(e.id) !== targetIdStr
   );
 
   user.markModified('expenses');
