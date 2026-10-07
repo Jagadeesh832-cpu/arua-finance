@@ -1,4 +1,4 @@
-﻿# Dependencies
+# Dependencies
 node_modules/
 .pnp
 .pnp.js
@@ -11,10 +11,11 @@ build/
 
 # Environment Variables (NEVER COMMIT SENSITIVE CREDENTIALS)
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+backend/.env*
+frontend/.env*
+*.local
+*.zip
 
 # Logs
 logs/

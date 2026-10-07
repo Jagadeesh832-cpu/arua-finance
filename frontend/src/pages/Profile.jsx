@@ -51,6 +51,7 @@ const Profile = () => {
 
   const [formData, setFormData] = useState({
     name: "",
+    phoneNumber: "",
     annualIncome: "",
     age: 24,
     monthlyBudget: "",
@@ -99,6 +100,7 @@ const Profile = () => {
     if (LoggedInUserData) {
       setFormData({
         name: LoggedInUserData.name || "",
+        phoneNumber: LoggedInUserData.phoneNumber ? LoggedInUserData.phoneNumber.replace(/^\+91/, '') : "",
         age: LoggedInUserData.age || 24,
         annualIncome: LoggedInUserData.annualIncome || "",
         monthlyBudget: LoggedInUserData.monthlyBudget || "",
@@ -128,9 +130,13 @@ const Profile = () => {
     setIsSubmittingProfile(true);
 
     try {
+      const cleanDigits = (formData.phoneNumber || "").replace(/\D/g, "");
+      const formattedPhone = cleanDigits.length === 10 ? `+91${cleanDigits}` : (LoggedInUserData.phoneNumber || undefined);
+
       const updatedData = {
         ...LoggedInUserData,
         name: formData.name.trim(),
+        ...(formattedPhone ? { phoneNumber: formattedPhone } : {}),
         annualIncome: Number(formData.annualIncome) || 0,
         age: Number(formData.age) || 24,
         monthlyBudget: Number(formData.monthlyBudget) || 0,
@@ -326,7 +332,7 @@ const Profile = () => {
             </CardHeader>
 
             <CardContent className="p-6">
-              <form onSubmit={handleSubmit} className="space-y-5 text-xs sm:text-sm">
+              <form onSubmit={handleSubmitProfile} className="space-y-5 text-xs sm:text-sm">
                 <div className="space-y-1.5">
                   <Label htmlFor="name" className="text-xs text-slate-300 font-semibold">
                     Full Legal Name
@@ -557,6 +563,28 @@ const Profile = () => {
                   </div>
                 </div>
               </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="phoneNumber" className="text-xs text-slate-300 font-semibold flex items-center justify-between">
+                    <span>Mobile Phone Number (for Real SMS Alerts)</span>
+                    <span className="text-[10px] text-cyan-400 font-normal">🇮🇳 10-digit Indian Number</span>
+                  </Label>
+                  <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 text-xs font-bold shrink-0 h-10">
+                      <span>+91</span>
+                    </div>
+                    <Input
+                      id="phoneNumber"
+                      type="tel"
+                      placeholder="98765 43210"
+                      value={formData.phoneNumber}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, phoneNumber: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+                      disabled={isSubmittingProfile}
+                      className="rounded-xl bg-slate-950/70 border-slate-800 text-white focus-visible:ring-blue-500 h-10 font-mono tracking-wide"
+                    />
+                  </div>
+                </div>
+
 
               {/* ======================================================== */}
               {/* SECTION B: EMAIL ALERTS & REPORTS                        */}

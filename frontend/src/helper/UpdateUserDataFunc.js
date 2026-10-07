@@ -3,18 +3,28 @@ import { getApiBaseUrl } from './apiUrl';
 export default async function UpdateUserDataFunc(userData) {
   try {
     const baseUrl = getApiBaseUrl();
+    const token = localStorage.getItem('arua_jwt_token') || localStorage.getItem('token') || '';
+
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
     const response = await fetch(`${baseUrl}/api/user/update`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(userData)
+      headers,
+      body: JSON.stringify(userData),
+      signal: controller.signal
     });
 
+    clearTimeout(timeoutId);
     const result = await response.json();
 
     if (!response.ok) {
-      throw new Error(result.error || 'Failed to update user data');
+      throw new Error(result.message || result.error || 'Failed to update user data');
     }
 
     return result;

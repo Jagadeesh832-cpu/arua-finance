@@ -20,7 +20,6 @@ import {
   AlertCircle,
   Loader2,
   KeyRound,
-  Lock,
   Eye,
   EyeOff,
   Sparkles,
@@ -302,7 +301,7 @@ const ForgotPassword = () => {
 
             <CardContent className="space-y-4">
               {/* Method Selector Tabs */}
-              {phoneStep !== "success" && !emailSuccess && (
+              {phoneStep !== "success" && emailStep !== "success" && (
                 <div className="grid grid-cols-2 p-1 bg-slate-950/80 border border-slate-800 rounded-xl mb-4 text-xs font-bold">
                   <button
                     type="button"
@@ -650,9 +649,9 @@ const ForgotPassword = () => {
                       <div className="flex flex-col items-center justify-center space-y-2 py-1">
                         <InputOTP
                           maxLength={6}
-                          value={otpCode}
+                          value={phoneOtpCode}
                           onChange={(val) => {
-                            setOtpCode(val);
+                            setPhoneOtpCode(val);
                             if (error) setError("");
                           }}
                           disabled={isPhoneSubmitting}
@@ -677,20 +676,20 @@ const ForgotPassword = () => {
                           <Label className="text-xs font-semibold text-slate-300">New Password</Label>
                           <div className="relative">
                             <Input
-                              type={showNewPassword ? "text" : "password"}
+                              type={showPhoneNewPassword ? "text" : "password"}
                               placeholder="Minimum 6 characters"
-                              value={newPassword}
-                              onChange={(e) => setNewPassword(e.target.value)}
+                              value={phoneNewPassword}
+                              onChange={(e) => setPhoneNewPassword(e.target.value)}
                               required
                               disabled={isPhoneSubmitting}
                               className="bg-slate-950/70 border-slate-800 focus:border-cyan-400 text-white rounded-xl text-xs h-10 pr-9"
                             />
                             <button
                               type="button"
-                              onClick={() => setShowNewPassword(!showNewPassword)}
+                              onClick={() => setShowPhoneNewPassword(!showPhoneNewPassword)}
                               className="absolute right-3 top-3 text-slate-500 hover:text-slate-300"
                             >
-                              {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              {showPhoneNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
                           </div>
                         </div>
@@ -699,20 +698,20 @@ const ForgotPassword = () => {
                           <Label className="text-xs font-semibold text-slate-300">Confirm New Password</Label>
                           <div className="relative">
                             <Input
-                              type={showConfirmPassword ? "text" : "password"}
+                              type={showPhoneConfirmPassword ? "text" : "password"}
                               placeholder="Re-enter new password"
-                              value={confirmPassword}
-                              onChange={(e) => setConfirmPassword(e.target.value)}
+                              value={phoneConfirmPassword}
+                              onChange={(e) => setPhoneConfirmPassword(e.target.value)}
                               required
                               disabled={isPhoneSubmitting}
                               className="bg-slate-950/70 border-slate-800 focus:border-cyan-400 text-white rounded-xl text-xs h-10 pr-9"
                             />
                             <button
                               type="button"
-                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                              onClick={() => setShowPhoneConfirmPassword(!showPhoneConfirmPassword)}
                               className="absolute right-3 top-3 text-slate-500 hover:text-slate-300"
                             >
-                              {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              {showPhoneConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
                           </div>
                         </div>
@@ -720,7 +719,7 @@ const ForgotPassword = () => {
 
                       <Button
                         type="submit"
-                        disabled={isPhoneSubmitting || otpCode.length !== 6 || !newPassword || !confirmPassword}
+                        disabled={isPhoneSubmitting || phoneOtpCode.length !== 6 || !phoneNewPassword || !phoneConfirmPassword}
                         className="w-full gradient-bg hover:opacity-90 text-white text-xs font-bold h-10 rounded-xl shadow-lg shadow-blue-500/25 border border-blue-400/30 transition-all flex items-center justify-center space-x-2 mt-2"
                       >
                         {isPhoneSubmitting ? (
