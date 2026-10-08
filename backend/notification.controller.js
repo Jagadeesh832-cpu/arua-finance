@@ -12,10 +12,6 @@ export class NotificationController {
     if (req.user && req.user._id) {
       return await User.findById(req.user._id);
     }
-    const identifier = req.query?.identifier || req.query?.email || req.query?.phone || req.body?.identifier || req.body?.email || req.body?.phone;
-    if (identifier) {
-      return await findUserByIdentifier(identifier);
-    }
     return null;
   }
 

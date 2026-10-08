@@ -1,15 +1,18 @@
-import { jsPDF } from "jspdf";
-
 /**
- * Generates an official, bank-grade PDF Expense Proof for a verified saved expense.
- * @param {Object} expense - The exact expense document confirmed and saved in MongoDB
- * @param {Object} user - The logged-in authenticated user object
- * @returns {{ success: boolean, filename: string }}
+ * Generates an official PDF Expense Proof for a verified saved expense.
+ * Lazy-loads jsPDF on demand to optimize application bundle size.
+ *
+ * @param {Object} expense - The verified expense document confirmed in MongoDB
+ * @param {Object} user - The authenticated user object
+ * @returns {Promise<{ success: boolean, filename: string, doc: Object }>}
  */
-export function generateExpensePdf(expense, user) {
+export async function generateExpensePdf(expense, user) {
   if (!expense || (!expense._id && !expense.id && !expense.expenseId)) {
     throw new Error("Cannot generate proof: Expense has not been confirmed or saved in MongoDB.");
   }
+
+  // Lazy-load jsPDF dynamically to keep initial JS bundle lightweight
+  const { jsPDF } = await import("jspdf");
 
   const expenseId = String(expense._id || expense.expenseId || expense.id || "unassigned");
   const rawAmount = Number(expense.amount) || 0;
@@ -18,9 +21,9 @@ export function generateExpensePdf(expense, user) {
     maximumFractionDigits: 2
   });
 
-  const userName = user?.name || user?.firstName || "Authorized Investor";
-  const userIdentifier = user?.email || user?.phoneNumber || "Verified Account";
-  
+  const userName = user?.name || user?.firstName || "Authorized Account Holder";
+  const userIdentifier = user?.email || user?.phoneNumber || "Verified User";
+
   const expenseDateStr = expense.date 
     ? new Date(expense.date).toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" })
     : new Date().toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" });
@@ -34,7 +37,8 @@ export function generateExpensePdf(expense, user) {
     second: "2-digit"
   });
 
-  const verificationRef = `ARUA-EXP-${expenseId.slice(-8).toUpperCase()}`;
+  const referenceId = expense.referenceId || `ARUA-REF-${expenseId.slice(-8).toUpperCase()}`;
+  const verificationHash = expense.verificationHash || "";
 
   // Initialize jsPDF A4 Document
   const doc = new jsPDF({
@@ -70,12 +74,12 @@ export function generateExpensePdf(expense, user) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.setTextColor(56, 189, 248); // sky-400
-  doc.text("OFFICIAL EXPENSE PROOF", pageWidth - margin, 12, { align: "right" });
+  doc.text("EXPENSE PROOF", pageWidth - margin, 12, { align: "right" });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(203, 213, 225);
-  doc.text(`Ref: ${verificationRef}`, pageWidth - margin, 18, { align: "right" });
+  doc.text(`Ref: ${referenceId}`, pageWidth - margin, 18, { align: "right" });
 
   // 2. Document Title & Status Badge
   let y = 38;
@@ -168,26 +172,29 @@ export function generateExpensePdf(expense, user) {
   drawRow("Amount (INR)", `₹ ${formattedAmount}`, false);
   drawRow("Payment Method", expense.paymentMethod || "UPI", true);
   drawRow("Expense Date", expenseDateStr, false);
-  drawRow("Accounting Status", "Recorded & Validated in Ledger", true);
+  drawRow("Accounting Status", "Recorded in Cloud Ledger", true);
 
-  // 5. Verification & Security Metadata Table
+  // 5. Verification & Metadata Table
   y += 6;
   doc.setFillColor(241, 245, 249);
   doc.rect(margin, y, contentWidth, 7, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8.5);
   doc.setTextColor(30, 41, 59);
-  doc.text("AUDIT & CLOUD VERIFICATION METADATA", margin + 4, y + 4.8);
+  doc.text("CLOUD LEDGER TRANSACTION METADATA", margin + 4, y + 4.8);
 
   y += 7;
-  drawRow("MongoDB Unique Expense ID", expenseId, false);
+  drawRow("Database Record ID", expenseId, false);
   if (expense.expenseId && expense.expenseId !== expenseId) {
     drawRow("Reference Expense ID", expense.expenseId, true);
   }
-  drawRow("Investor Name", userName, expense.expenseId && expense.expenseId !== expenseId ? false : true);
-  drawRow("Investor Account", userIdentifier, expense.expenseId && expense.expenseId !== expenseId ? true : false);
+  drawRow("Account Holder Name", userName, expense.expenseId && expense.expenseId !== expenseId ? false : true);
+  drawRow("Account Identifier", userIdentifier, expense.expenseId && expense.expenseId !== expenseId ? true : false);
   drawRow("Proof Generation Timestamp", generatedAt, expense.expenseId && expense.expenseId !== expenseId ? false : true);
-  drawRow("Cryptographic Verification Key", verificationRef, expense.expenseId && expense.expenseId !== expenseId ? true : false);
+  drawRow("Reference ID", referenceId, expense.expenseId && expense.expenseId !== expenseId ? true : false);
+  if (verificationHash) {
+    drawRow("Server Verification Hash", verificationHash, false);
+  }
 
   // 6. Security & Audit Box
   y += 8;
@@ -198,12 +205,12 @@ export function generateExpensePdf(expense, user) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
   doc.setTextColor(30, 41, 59);
-  doc.text("AUDIT SECURITY STATEMENT", margin + 4, y + 5.5);
+  doc.text("LEDGER RECORD INTEGRITY STATEMENT", margin + 4, y + 5.5);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(100, 116, 139);
-  const auditStatement = `This document serves as an authorized electronic expense receipt recorded for ${userName} in Arua Finance. Any tampering or unauthorized modification invalidates this document. The database record holds immutable precedence in all financial reconciliations.`;
+  const auditStatement = `This document is an electronic copy of expenditure recorded for ${userName} in the Arua Finance cloud ledger. Generated from verified database records. The database record holds authoritative precedence in financial reconciliations.`;
   const splitAudit = doc.splitTextToSize(auditStatement, contentWidth - 8);
   doc.text(splitAudit, margin + 4, y + 10);
 

@@ -1,7 +1,6 @@
-﻿import jwt from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import { User } from "./user.model.js";
-
-const JWT_SECRET = process.env.JWT_SECRET || "arua_finance_jwt_secret_key_secure_2026";
+import { getJwtSecret } from "./jwt.config.js";
 
 /**
  * Middleware to authenticate requests via JWT Bearer token
@@ -27,7 +26,8 @@ export async function requireAuth(req, res, next) {
       });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const secret = getJwtSecret();
+    const decoded = jwt.verify(token, secret);
     if (!decoded || !decoded.id) {
       return res.status(401).json({
         success: false,
@@ -72,7 +72,8 @@ export async function optionalAuth(req, res, next) {
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const token = authHeader.split(" ")[1];
       if (token) {
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const secret = getJwtSecret();
+        const decoded = jwt.verify(token, secret);
         if (decoded && decoded.id) {
           req.user = await User.findById(decoded.id);
         }

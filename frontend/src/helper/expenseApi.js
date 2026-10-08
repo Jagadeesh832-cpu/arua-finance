@@ -1,13 +1,9 @@
 import { getApiBaseUrl } from './apiUrl';
+import { getAuthHeaders } from './authToken';
 
 export async function addExpenseApi(expenseData) {
   const baseUrl = getApiBaseUrl();
-  const token = localStorage.getItem('arua_jwt_token') || localStorage.getItem('token') || '';
-
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-  };
+  const headers = getAuthHeaders();
 
   const response = await fetch(`${baseUrl}/api/user/expenses`, {
     method: 'POST',
@@ -25,12 +21,7 @@ export async function addExpenseApi(expenseData) {
 
 export async function updateExpenseApi(expenseId, updates) {
   const baseUrl = getApiBaseUrl();
-  const token = localStorage.getItem('arua_jwt_token') || localStorage.getItem('token') || '';
-
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-  };
+  const headers = getAuthHeaders();
 
   const response = await fetch(`${baseUrl}/api/user/expenses/${encodeURIComponent(expenseId)}`, {
     method: 'PUT',
@@ -48,14 +39,10 @@ export async function updateExpenseApi(expenseId, updates) {
 
 export async function deleteExpenseApi(expenseId, identifier) {
   const baseUrl = getApiBaseUrl();
-  const token = localStorage.getItem('arua_jwt_token') || localStorage.getItem('token') || '';
+  const headers = getAuthHeaders();
 
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-  };
-
-  const response = await fetch(`${baseUrl}/api/user/expenses/${encodeURIComponent(expenseId)}?identifier=${encodeURIComponent(identifier)}`, {
+  const queryParam = identifier ? `?identifier=${encodeURIComponent(identifier)}` : '';
+  const response = await fetch(`${baseUrl}/api/user/expenses/${encodeURIComponent(expenseId)}${queryParam}`, {
     method: 'DELETE',
     headers
   });
@@ -63,6 +50,23 @@ export async function deleteExpenseApi(expenseId, identifier) {
   const result = await response.json();
   if (!response.ok) {
     throw new Error(result.error || result.message || 'Failed to delete expense');
+  }
+
+  return result;
+}
+
+export async function fetchExpenseProofApi(expenseId) {
+  const baseUrl = getApiBaseUrl();
+  const headers = getAuthHeaders();
+
+  const response = await fetch(`${baseUrl}/api/user/expenses/${encodeURIComponent(expenseId)}/proof`, {
+    method: 'GET',
+    headers
+  });
+
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || result.message || 'Failed to verify expense proof');
   }
 
   return result;

@@ -3,6 +3,7 @@ import { useAuth } from "@/helper/auth";
 import { formatINR } from "@/helper/formatters";
 import { calculateHealthScore } from "@/helper/healthScore";
 import { getApiBaseUrl } from "@/helper/apiUrl";
+import { getAuthHeaders } from "@/helper/authToken";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,7 +40,9 @@ export default function MonthlyFinancialReport() {
     try {
       const identifier = LoggedInUserData?.phoneNumber || LoggedInUserData?.email;
       const baseUrl = getApiBaseUrl();
-      const res = await fetch(`${baseUrl}/api/ai/report?identifier=${encodeURIComponent(identifier)}`);
+      const res = await fetch(`${baseUrl}/api/ai/report?identifier=${encodeURIComponent(identifier)}`, {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       if (data.success && data.report) {
         setReportData(data.report);

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useAuth } from "@/helper/auth";
 import { formatINR } from "@/helper/formatters";
 import { getApiBaseUrl } from "@/helper/apiUrl";
+import { getAuthHeaders } from "@/helper/authToken";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -68,7 +69,7 @@ export default function FinancialGoalPlanner() {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/user/goals`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           identifier,
           name: formData.name.trim(),
@@ -109,7 +110,8 @@ export default function FinancialGoalPlanner() {
       const identifier = LoggedInUserData?.phoneNumber || LoggedInUserData?.email;
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/user/goals/${goalId}?identifier=${encodeURIComponent(identifier)}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: getAuthHeaders()
       });
       const data = await res.json();
       if (data.success) {
@@ -128,7 +130,7 @@ export default function FinancialGoalPlanner() {
       const newTotal = (Number(goal.currentAmount) || 0) + Number(contributeAmount);
       const res = await fetch(`${baseUrl}/api/user/goals/${goal.id || goal._id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           identifier,
           currentAmount: newTotal

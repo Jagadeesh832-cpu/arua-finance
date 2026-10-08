@@ -3,6 +3,7 @@ import { createContext, useContext, useState, useEffect, useRef } from "react";
 import SaveUserDataFunc from "./SaveUserDataFunc";
 import GetUserDataFunc from "./GetUserDataFunc";
 import { getApiBaseUrl } from "./apiUrl";
+import { setAuthToken, clearAuthToken, getAuthToken } from "./authToken";
 
 export const OTP_LENGTH = parseInt(import.meta.env.VITE_OTP_LENGTH || "6", 10);
 
@@ -146,7 +147,7 @@ export function useRajAuth() {
 
       // Successful login
       if (data.token) {
-        localStorage.setItem("arua_auth_token", data.token);
+        setAuthToken(data.token);
       }
       if (data.user?.phoneNumber) {
         localStorage.setItem("arua_user_phone", data.user.phoneNumber);
@@ -252,7 +253,7 @@ export function useRajAuth() {
 
       // Successful Registration and Login
       if (data.token) {
-        localStorage.setItem("arua_auth_token", data.token);
+        setAuthToken(data.token);
       }
       if (data.user?.phoneNumber) {
         localStorage.setItem("arua_user_phone", data.user.phoneNumber);
@@ -299,7 +300,7 @@ export function useRajAuth() {
       }
 
       if (data.token) {
-        localStorage.setItem("arua_auth_token", data.token);
+        setAuthToken(data.token);
       }
       if (data.user?.phoneNumber) {
         localStorage.setItem("arua_user_phone", data.user.phoneNumber);
@@ -446,7 +447,7 @@ export function useRajAuth() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("arua_auth_token") || ""}`
+          ...(getAuthToken() ? { "Authorization": `Bearer ${getAuthToken()}` } : {})
         },
         body: JSON.stringify({ identifier, currentPassword, newPassword, confirmPassword })
       });
@@ -501,7 +502,7 @@ export function useRajAuth() {
     try {
       localStorage.removeItem("arua_user_phone");
       localStorage.removeItem("arua_user_email");
-      localStorage.removeItem("arua_auth_token");
+      clearAuthToken();
       localStorage.removeItem("arua_user_data");
       setUser(null);
       setLoggedInUserData(null);

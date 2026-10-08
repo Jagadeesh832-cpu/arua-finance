@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'arua_finance_jwt_secret_key_secure_2026';
+import { getJwtSecret } from './jwt.config.js';
 
 // Helper to generate JWT token
 export function generateAuthToken(user) {
@@ -15,7 +15,7 @@ export function generateAuthToken(user) {
       phoneNumber: user.phoneNumber,
       name: user.name
     },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: '30d' }
   );
 }
@@ -256,7 +256,7 @@ export async function updateUserDetails(identifier, updates) {
       ]
     },
     { $set: filteredUpdates },
-    { new: true, upsert: true }
+    { new: true, upsert: false }
   );
 }
 
@@ -512,7 +512,7 @@ export async function updateExpenseInUser(identifier, expenseId, updates) {
 
   user.markModified('expenses');
   await user.save();
-  return user;
+  return { user, updatedExpense: exp };
 }
 
 export async function deleteExpenseFromUser(identifier, expenseId) {
@@ -520,9 +520,14 @@ export async function deleteExpenseFromUser(identifier, expenseId) {
   if (!user) throw new Error("User not found");
 
   const targetIdStr = String(expenseId).trim();
+  const initialCount = (user.expenses || []).length;
   user.expenses = (user.expenses || []).filter(
     e => String(e._id) !== targetIdStr && String(e.expenseId) !== targetIdStr && String(e.id) !== targetIdStr
   );
+
+  if (user.expenses.length === initialCount) {
+    throw new Error("Expense record not found");
+  }
 
   user.markModified('expenses');
   await user.save();
@@ -577,7 +582,11 @@ export async function deleteGoal(identifier, goalId) {
   const user = await findUserByIdentifier(identifier);
   if (!user) throw new Error("User not found");
 
+  const initialGoalCount = (user.goals || []).length;
   user.goals = (user.goals || []).filter(g => g.id !== goalId && String(g._id) !== goalId);
+  if (user.goals.length === initialGoalCount) {
+    throw new Error("Goal not found");
+  }
   user.markModified('goals');
   await user.save();
   return user;

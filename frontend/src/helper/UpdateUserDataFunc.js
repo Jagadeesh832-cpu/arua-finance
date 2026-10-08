@@ -1,14 +1,10 @@
 import { getApiBaseUrl } from './apiUrl';
+import { getAuthHeaders } from './authToken';
 
 export default async function UpdateUserDataFunc(userData) {
   try {
     const baseUrl = getApiBaseUrl();
-    const token = localStorage.getItem('arua_jwt_token') || localStorage.getItem('token') || '';
-
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    };
+    const headers = getAuthHeaders();
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 12000);

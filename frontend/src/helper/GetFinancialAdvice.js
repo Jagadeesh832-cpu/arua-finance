@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from "./apiUrl";
+import { getAuthHeaders } from "./authToken";
 
 /**
  * Generate AI-based financial advice using backend-proxied Gemini
@@ -35,7 +36,7 @@ export async function getFinancialAdvice({
     const baseUrl = getApiBaseUrl();
     const res = await fetch(`${baseUrl}/api/ai/coach`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify({
         message: promptMessage,
         userData: {

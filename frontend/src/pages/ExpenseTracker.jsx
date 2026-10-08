@@ -8,9 +8,8 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import UpdateUserDataFunc from "../helper/UpdateUserDataFunc";
-import { addExpenseApi, updateExpenseApi, deleteExpenseApi } from "@/helper/expenseApi";
+import { addExpenseApi, updateExpenseApi, deleteExpenseApi, fetchExpenseProofApi } from "@/helper/expenseApi";
 import { formatINR } from "@/helper/formatters";
-import { generateExpensePdf } from "@/helper/generateExpensePdf";
 import {
   Plus,
   Trash2,
@@ -119,10 +118,11 @@ const ExpenseTracker = () => {
     return colors[category] || "bg-slate-900 text-slate-300 border-slate-700";
   };
 
-  // Generate PDF Proof for verified saved expense
-  const handleGeneratePdf = (expenseItem) => {
+    // Generate PDF Proof for verified saved expense with lazy-loaded bundle
+  const handleGeneratePdf = async (expenseItem) => {
     try {
-      if (!expenseItem || (!expenseItem._id && !expenseItem.expenseId && !expenseItem.id)) {
+      const expId = expenseItem?._id || expenseItem?.expenseId || expenseItem?.id;
+      if (!expId) {
         toast({
           title: "Cannot generate PDF",
           description: "Expense has not been confirmed or saved in MongoDB.",
@@ -131,7 +131,21 @@ const ExpenseTracker = () => {
         return;
       }
 
-      const res = generateExpensePdf(expenseItem, LoggedInUserData);
+      // Fetch authoritative server-verified proof record
+      let recordToUse = expenseItem;
+      try {
+        const proofRes = await fetchExpenseProofApi(expId);
+        if (proofRes && proofRes.verifiedRecord) {
+          recordToUse = proofRes.verifiedRecord;
+        }
+      } catch (proofErr) {
+        // Fallback to local verified document if offline
+        console.warn("Server proof verification notice:", proofErr.message);
+      }
+
+      // Lazy-load PDF generator module dynamically
+      const { generateExpensePdf } = await import("@/helper/generateExpensePdf");
+      const res = await generateExpensePdf(recordToUse, LoggedInUserData);
       toast({
         title: "PDF Proof Generated",
         description: `Downloaded ${res.filename} successfully.`

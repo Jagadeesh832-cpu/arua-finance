@@ -17,15 +17,22 @@ import { normalizePhoneNumber, normalizeEmail } from '../backend/user.controller
 
 console.log('--- RUNNING ARUA FINANCE AUTOMATED QA & INTEGRATION SUITE ---');
 
-// TEST 1: Income Tax FY 2025-26 Slabs
-console.log('Test 1: Income Tax FY 2025-26 Slabs');
+// TEST 1: Versioned Income Tax Slabs (AY 2025-26 & AY 2024-25)
+console.log('Test 1: Versioned Income Tax Slabs (Finance Act 2024 & Historical)');
 const taxZero = calculateTax(650000, 'new');
 assert.equal(taxZero.total, 0, 'New regime <= 7L should have 0 tax under Section 87A');
 
-const tax12L = calculateTax(1200000, 'new');
-assert.equal(tax12L.tax, 90000, 'New regime 12L base tax should be 90,000');
-assert.equal(tax12L.cess, 3600, '4% Health & Education Cess should be 3,600');
-assert.equal(tax12L.total, 93600, 'Total tax for 12L should be 93,600');
+// AY 2025-26 (Finance (No. 2) Act 2024 revised slabs: 3-7L @ 5%, 7-10L @ 10%, 10-12L @ 15%)
+const tax12L = calculateTax(1200000, 'new', 'AY 2025-26');
+assert.equal(tax12L.tax, 80000, 'AY 2025-26 New regime 12L base tax should be 80,000');
+assert.equal(tax12L.cess, 3200, '4% Health & Education Cess should be 3,200');
+assert.equal(tax12L.total, 83200, 'Total tax for 12L in AY 2025-26 should be 83,200');
+
+// AY 2024-25 (Historical previous slabs: 3-6L @ 5%, 6-9L @ 10%, 9-12L @ 15%)
+const tax12LPrev = calculateTax(1200000, 'new', 'AY 2024-25');
+assert.equal(tax12LPrev.tax, 90000, 'AY 2024-25 New regime 12L base tax should be 90,000');
+assert.equal(tax12LPrev.cess, 3600, '4% Health & Education Cess should be 3,600');
+assert.equal(tax12LPrev.total, 93600, 'Total tax for 12L in AY 2024-25 should be 93,600');
 
 const taxOld5L = calculateTax(500000, 'old');
 assert.equal(taxOld5L.total, 0, 'Old regime <= 5L should have 0 tax under Section 87A');

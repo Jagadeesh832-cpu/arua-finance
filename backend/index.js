@@ -37,6 +37,26 @@ import { SpendingAlertService } from './spendingAlert.service.js';
 import { AnomalyService } from './anomaly.service.js';
 import { SmsService } from './sms.service.js';
 import { PushService } from './push.service.js';
+import { getJwtSecret } from './jwt.config.js';
+import crypto from 'crypto';
+
+// Helper to enforce user-to-user data isolation
+function isSameUser(reqUser, requestedIdentifier) {
+  if (!requestedIdentifier || !reqUser) return true;
+  const clean = String(requestedIdentifier).trim().toLowerCase();
+  const digits = clean.replace(/\D/g, "");
+  const p10 = digits.length >= 10 ? digits.slice(-10) : digits;
+
+  if (String(reqUser._id).toLowerCase() === clean) return true;
+  if (reqUser.email && reqUser.email.toLowerCase() === clean) return true;
+  if (reqUser.phoneNumber) {
+    const userDigits = reqUser.phoneNumber.replace(/\D/g, "");
+    const userP10 = userDigits.length >= 10 ? userDigits.slice(-10) : userDigits;
+    if (userP10 === p10) return true;
+  }
+  return false;
+}
+
 
 dotenv.config();
 const app = express();
@@ -879,29 +899,33 @@ app.post('/api/user/create', async (req, res) => {
   }
 });
 
-app.get('/api/user', async (req, res) => {
+app.get('/api/user', requireAuth, async (req, res) => {
   try {
     const identifier = req.query.phone || req.query.phoneNumber || req.query.email || req.query.identifier;
-    if (!identifier) return res.status(400).json({ error: "Phone number or email is required" });
-    const user = await fetchUserByEmail(identifier);
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (identifier && !isSameUser(req.user, identifier)) {
+      return res.status(403).json({ success: false, error: "Access denied. Cannot access another user's profile." });
+    }
+    const user = await fetchUserByEmail(req.user._id);
+    if (!user) return res.status(404).json({ success: false, error: "User not found" });
     res.json(sanitizeUser(user));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-app.post('/api/user/update', async (req, res) => {
+app.post('/api/user/update', requireAuth, async (req, res) => {
   try {
     const { email, phone, phoneNumber, identifier, ...updates } = req.body;
     const userIdentifier = phone || phoneNumber || email || identifier;
-    if (!userIdentifier) return res.status(400).json({ error: "User identifier is required" });
-    const user = await updateUserDetails(userIdentifier, {
+    if (userIdentifier && !isSameUser(req.user, userIdentifier)) {
+      return res.status(403).json({ success: false, error: "Access denied. Cannot update another user's profile." });
+    }
+    const user = await updateUserDetails(req.user._id, {
       ...(email ? { email } : {}),
       ...(phone || phoneNumber ? { phoneNumber: phone || phoneNumber } : {}),
       ...updates
     });
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user) return res.status(404).json({ success: false, error: "User not found" });
 
     // If budget or expenses were modified, trigger alert evaluation
     if (updates.monthlyBudget !== undefined || updates.expenses !== undefined) {
@@ -921,36 +945,45 @@ app.post('/api/user/update', async (req, res) => {
 // ==========================================
 // 6. Expense Management Endpoints (With Real-Time Spending Alerts)
 // ==========================================
-app.get('/api/user/expenses', async (req, res) => {
+app.get('/api/user/expenses', requireAuth, async (req, res) => {
   try {
     const identifier = req.query.identifier || req.query.phone || req.query.email;
-    if (!identifier) return res.status(400).json({ error: "User identifier is required" });
-    const user = await fetchUserByEmail(identifier);
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (identifier && !isSameUser(req.user, identifier)) {
+      return res.status(403).json({ success: false, error: "Access denied. Cannot access another user's expenses." });
+    }
+    const user = await fetchUserByEmail(req.user._id);
+    if (!user) return res.status(404).json({ success: false, error: "User not found" });
     res.json({ success: true, expenses: user.expenses || [] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/user/expenses', async (req, res) => {
+app.post('/api/user/expenses', requireAuth, async (req, res) => {
   try {
-    const { identifier, phone, email, description, amount, category, paymentMethod, date } = req.body;
+    const { identifier, phone, email, description, amount, category, paymentMethod, date, expenseId } = req.body;
     const userIdentifier = identifier || phone || email;
-    if (!userIdentifier) return res.status(400).json({ error: "User identifier is required" });
-    if (!description || !amount) {
-      return res.status(400).json({ error: "Description and amount are required" });
+    if (userIdentifier && !isSameUser(req.user, userIdentifier)) {
+      return res.status(403).json({ success: false, error: "Access denied. Cannot add expense to another user's account." });
+    }
+    if (!description || amount === undefined || amount === null) {
+      return res.status(400).json({ success: false, error: "Description and amount are required" });
+    }
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ success: false, error: "Expense amount must be a positive number" });
     }
 
-    const { user, newExpense } = await addExpenseToUser(userIdentifier, {
+    const { user, newExpense } = await addExpenseToUser(req.user._id, {
       description,
-      amount,
+      amount: numAmount,
       category,
       paymentMethod,
-      date
+      date,
+      ...(expenseId ? { expenseId } : {})
     });
 
-    // Real-Time Spending Alert Pipeline (In-App, SMS, Push, Anomaly Detection, Duplicate Suppression)
+    // Real-Time Spending Alert Pipeline
     let alertResult = { alertSummary: [] };
     try {
       alertResult = await SpendingAlertService.processExpenseChange(user, newExpense, 'create');
@@ -966,19 +999,22 @@ app.post('/api/user/expenses', async (req, res) => {
       alertsTriggered: alertResult.alertSummary || []
     });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
-app.put('/api/user/expenses/:expenseId', async (req, res) => {
+app.put('/api/user/expenses/:expenseId', requireAuth, async (req, res) => {
   try {
     const { expenseId } = req.params;
     const { identifier, phone, email, ...updates } = req.body;
     const userIdentifier = identifier || phone || email;
-    if (!userIdentifier) return res.status(400).json({ error: "User identifier is required" });
+    if (userIdentifier && !isSameUser(req.user, userIdentifier)) {
+      return res.status(403).json({ success: false, error: "Access denied. Cannot modify another user's expense." });
+    }
 
-    const updatedUser = await updateExpenseInUser(userIdentifier, expenseId, updates);
-    const updatedExpense = (updatedUser.expenses || []).find(e => String(e._id) === String(expenseId) || String(e.id) === String(expenseId));
+    const result = await updateExpenseInUser(req.user._id, expenseId, updates);
+    const updatedUser = result.user;
+    const updatedExpense = result.updatedExpense;
 
     let alertResult = { alertSummary: [] };
     try {
@@ -990,21 +1026,25 @@ app.put('/api/user/expenses/:expenseId', async (req, res) => {
     res.json({
       success: true,
       user: sanitizeUser(updatedUser),
+      expense: updatedExpense,
       expenses: updatedUser.expenses,
       alertsTriggered: alertResult.alertSummary || []
     });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const statusCode = err.message && err.message.toLowerCase().includes('not found') ? 404 : 400;
+    res.status(statusCode).json({ success: false, error: err.message });
   }
 });
 
-app.delete('/api/user/expenses/:expenseId', async (req, res) => {
+app.delete('/api/user/expenses/:expenseId', requireAuth, async (req, res) => {
   try {
     const { expenseId } = req.params;
-    const userIdentifier = req.query.identifier || req.query.phone || req.query.email || req.body.identifier;
-    if (!userIdentifier) return res.status(400).json({ error: "User identifier is required" });
+    const userIdentifier = req.query.identifier || req.query.phone || req.query.email || req.body?.identifier;
+    if (userIdentifier && !isSameUser(req.user, userIdentifier)) {
+      return res.status(403).json({ success: false, error: "Access denied. Cannot delete another user's expense." });
+    }
 
-    const updatedUser = await deleteExpenseFromUser(userIdentifier, expenseId);
+    const updatedUser = await deleteExpenseFromUser(req.user._id, expenseId);
 
     let alertResult = { alertSummary: [] };
     try {
@@ -1020,134 +1060,182 @@ app.delete('/api/user/expenses/:expenseId', async (req, res) => {
       alertsTriggered: alertResult.alertSummary || []
     });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const statusCode = err.message && err.message.toLowerCase().includes('not found') ? 404 : 400;
+    res.status(statusCode).json({ success: false, error: err.message });
+  }
+});
+
+// Verified Server Expense Proof Generation
+app.get('/api/user/expenses/:expenseId/proof', requireAuth, async (req, res) => {
+  try {
+    const { expenseId } = req.params;
+    const requestedIdentifier = req.query.identifier || req.query.phone || req.query.email;
+    if (requestedIdentifier && !isSameUser(req.user, requestedIdentifier)) {
+      return res.status(403).json({ success: false, error: "Access denied. Cannot access another user's expense proof." });
+    }
+
+    const user = await fetchUserByEmail(req.user._id);
+    if (!user) return res.status(404).json({ success: false, error: "User not found" });
+
+    const targetIdStr = String(expenseId).trim();
+    const expense = (user.expenses || []).find(
+      e => String(e._id) === targetIdStr || String(e.expenseId) === targetIdStr || String(e.id) === targetIdStr
+    );
+
+    if (!expense) {
+      return res.status(404).json({ success: false, error: "Expense record not found in verified database records." });
+    }
+
+    // Generate cryptographic server HMAC signature
+    const payload = `${user._id}:${expense._id}:${expense.amount}:${expense.date ? new Date(expense.date).toISOString() : ''}:${expense.description}`;
+    const verificationHash = crypto.createHmac('sha256', getJwtSecret()).update(payload).digest('hex');
+    const verificationReference = `ARUA-${verificationHash.slice(0, 12).toUpperCase()}`;
+
+    res.status(200).json({
+      success: true,
+      proof: {
+        verified: true,
+        expenseId: expense._id.toString(),
+        customExpenseId: expense.expenseId || null,
+        userId: user._id.toString(),
+        userName: user.name || "Investor",
+        userEmail: user.email || "",
+        userPhone: user.phoneNumber || "",
+        amount: expense.amount,
+        description: expense.description,
+        category: expense.category,
+        paymentMethod: expense.paymentMethod,
+        date: expense.date,
+        recordedAt: expense.createdAt || expense.date,
+        serverVerificationHash: verificationHash,
+        verificationReference,
+        issuer: "Arua Finance Server Verification Authority",
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (err) {
+    console.error("expense proof error:", err);
+    res.status(500).json({ success: false, error: err.message || "Failed to generate expense proof" });
   }
 });
 
 // ==========================================
 // 6B. In-App, Push & SMS Notification Endpoints
 // ==========================================
-app.get('/api/notifications', optionalAuth, NotificationController.getNotifications);
-app.get('/api/notifications/unread-count', optionalAuth, NotificationController.getUnreadCount);
-app.patch('/api/notifications/read-all', optionalAuth, NotificationController.markAllAsRead);
-app.patch('/api/notifications/:id/read', optionalAuth, NotificationController.markAsRead);
-app.delete('/api/notifications/:id', optionalAuth, NotificationController.deleteNotification);
-app.delete('/api/notifications', optionalAuth, NotificationController.clearAllNotifications);
-app.get('/api/notifications/preferences', optionalAuth, NotificationController.getPreferences);
-app.put('/api/notifications/preferences', optionalAuth, NotificationController.updatePreferences);
-app.post('/api/notifications/push/subscribe', optionalAuth, NotificationController.subscribePush);
-app.post('/api/notifications/push/test', optionalAuth, NotificationController.testNotification);
+app.get('/api/notifications', requireAuth, NotificationController.getNotifications);
+app.get('/api/notifications/unread-count', requireAuth, NotificationController.getUnreadCount);
+app.patch('/api/notifications/read-all', requireAuth, NotificationController.markAllAsRead);
+app.patch('/api/notifications/:id/read', requireAuth, NotificationController.markAsRead);
+app.delete('/api/notifications/:id', requireAuth, NotificationController.deleteNotification);
+app.delete('/api/notifications', requireAuth, NotificationController.clearAllNotifications);
+app.get('/api/notifications/preferences', requireAuth, NotificationController.getPreferences);
+app.put('/api/notifications/preferences', requireAuth, NotificationController.updatePreferences);
+app.post('/api/notifications/push/subscribe', requireAuth, NotificationController.subscribePush);
+app.post('/api/notifications/push/test', requireAuth, NotificationController.testNotification);
 
 // ==========================================
 // 7. Financial Goal Management Endpoints
 // ==========================================
-app.post('/api/user/goals', async (req, res) => {
+app.post('/api/user/goals', requireAuth, async (req, res) => {
   try {
     const { identifier, phone, email, ...goalData } = req.body;
     const userIdentifier = identifier || phone || email;
-    if (!userIdentifier) return res.status(400).json({ error: "User identifier is required" });
+    if (userIdentifier && !isSameUser(req.user, userIdentifier)) {
+      return res.status(403).json({ success: false, error: "Access denied." });
+    }
     if (!goalData.name || !goalData.targetAmount) {
-      return res.status(400).json({ error: "Goal name and target amount are required" });
+      return res.status(400).json({ success: false, error: "Goal name and target amount are required" });
     }
 
-    const updatedUser = await addGoal(userIdentifier, goalData);
+    const updatedUser = await addGoal(req.user._id, goalData);
     res.status(201).json({ success: true, user: sanitizeUser(updatedUser), goals: updatedUser.goals });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-app.put('/api/user/goals/:goalId', async (req, res) => {
+app.put('/api/user/goals/:goalId', requireAuth, async (req, res) => {
   try {
     const { goalId } = req.params;
     const { identifier, phone, email, ...updates } = req.body;
     const userIdentifier = identifier || phone || email;
-    if (!userIdentifier) return res.status(400).json({ error: "User identifier is required" });
+    if (userIdentifier && !isSameUser(req.user, userIdentifier)) {
+      return res.status(403).json({ success: false, error: "Access denied." });
+    }
 
-    const updatedUser = await updateGoal(userIdentifier, goalId, updates);
+    const updatedUser = await updateGoal(req.user._id, goalId, updates);
     res.json({ success: true, user: sanitizeUser(updatedUser), goals: updatedUser.goals });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const statusCode = err.message && err.message.toLowerCase().includes('not found') ? 404 : 400;
+    res.status(statusCode).json({ success: false, error: err.message });
   }
 });
 
-app.delete('/api/user/goals/:goalId', async (req, res) => {
+app.delete('/api/user/goals/:goalId', requireAuth, async (req, res) => {
   try {
     const { goalId } = req.params;
-    const userIdentifier = req.query.identifier || req.query.phone || req.query.email || req.body.identifier;
-    if (!userIdentifier) return res.status(400).json({ error: "User identifier is required" });
+    const userIdentifier = req.query.identifier || req.query.phone || req.query.email || req.body?.identifier;
+    if (userIdentifier && !isSameUser(req.user, userIdentifier)) {
+      return res.status(403).json({ success: false, error: "Access denied." });
+    }
 
-    const updatedUser = await deleteGoal(userIdentifier, goalId);
+    const updatedUser = await deleteGoal(req.user._id, goalId);
     res.json({ success: true, user: sanitizeUser(updatedUser), goals: updatedUser.goals });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const statusCode = err.message && err.message.toLowerCase().includes('not found') ? 404 : 400;
+    res.status(statusCode).json({ success: false, error: err.message });
   }
 });
 
 // ==========================================
 // 8. AI Wealth Intelligence Endpoints
 // ==========================================
-app.post('/api/ai/coach', async (req, res) => {
+app.post('/api/ai/coach', requireAuth, async (req, res) => {
   try {
-    const { message, chatHistory, identifier, phone, email, userData } = req.body;
-    if (!message) return res.status(400).json({ error: "Message is required" });
+    const { message, chatHistory } = req.body;
+    if (!message) return res.status(400).json({ success: false, error: "Message is required" });
 
-    let user = userData;
-    const userIdentifier = identifier || phone || email;
-    if (!user && userIdentifier) {
-      user = await fetchUserByEmail(userIdentifier);
-    }
-
+    // Fetch authoritative authenticated user data
+    const user = await fetchUserByEmail(req.user._id);
     const botResponse = await AIService.coachChat(user || {}, message, chatHistory || []);
     res.json({ success: true, response: botResponse });
   } catch (err) {
     console.error("AI Coach endpoint error:", err);
-    res.status(500).json({ error: err.message || "Failed to process AI chat" });
+    res.status(500).json({ success: false, error: err.message || "Failed to process AI chat" });
   }
 });
 
-app.get('/api/ai/health-score', async (req, res) => {
+app.get('/api/ai/health-score', requireAuth, async (req, res) => {
   try {
-    const identifier = req.query.identifier || req.query.phone || req.query.email;
-    let user = null;
-    if (identifier) {
-      user = await fetchUserByEmail(identifier);
-    }
+    const user = await fetchUserByEmail(req.user._id);
     const health = AIService.calculateHealthScore(user);
     res.json(health);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-app.get('/api/ai/report', async (req, res) => {
+app.get('/api/ai/report', requireAuth, async (req, res) => {
   try {
-    const identifier = req.query.identifier || req.query.phone || req.query.email;
-    if (!identifier) return res.status(400).json({ error: "User identifier is required" });
-    const user = await fetchUserByEmail(identifier);
-    if (!user) return res.status(404).json({ error: "User not found" });
+    const user = await fetchUserByEmail(req.user._id);
+    if (!user) return res.status(404).json({ success: false, error: "User not found" });
 
     const report = await AIService.generateMonthlyReport(user);
     res.json({ success: true, report });
   } catch (err) {
     console.error("AI Report endpoint error:", err);
-    res.status(500).json({ error: err.message || "Failed to generate monthly report" });
+    res.status(500).json({ success: false, error: err.message || "Failed to generate monthly report" });
   }
 });
 
-app.post('/api/ai/recommendations', async (req, res) => {
+app.post('/api/ai/recommendations', requireAuth, async (req, res) => {
   try {
-    const { identifier, phone, email, userData } = req.body;
-    let user = userData;
-    const userIdentifier = identifier || phone || email;
-    if (!user && userIdentifier) {
-      user = await fetchUserByEmail(userIdentifier);
-    }
+    const user = await fetchUserByEmail(req.user._id);
     const cards = await AIService.generateDynamicRecommendations(user || {});
     res.json({ success: true, recommendations: cards });
   } catch (err) {
     console.error("AI Recommendations error:", err);
-    res.status(500).json({ error: err.message || "Failed to generate recommendations" });
+    res.status(500).json({ success: false, error: err.message || "Failed to generate recommendations" });
   }
 });
 

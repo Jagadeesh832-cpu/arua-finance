@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from './apiUrl';
+import { getAuthHeaders } from './authToken';
 
 export default async function GetUserDataFunc(identifier) {
   try {
@@ -6,12 +7,7 @@ export default async function GetUserDataFunc(identifier) {
     const isPhone = identifier.startsWith('+') || /^\d+$/.test(identifier);
     const paramKey = isPhone ? 'phone' : 'email';
     const baseUrl = getApiBaseUrl();
-    const token = localStorage.getItem('arua_jwt_token') || localStorage.getItem('token') || '';
-
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    };
+    const headers = getAuthHeaders();
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);

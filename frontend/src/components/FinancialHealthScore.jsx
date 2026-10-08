@@ -3,6 +3,7 @@ import { useAuth } from "@/helper/auth";
 import { calculateHealthScore } from "@/helper/healthScore";
 import { formatINR } from "@/helper/formatters";
 import { getApiBaseUrl } from "@/helper/apiUrl";
+import { getAuthHeaders } from "@/helper/authToken";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,7 +65,7 @@ export default function FinancialHealthScore({ onNavigateTab }) {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/ai/coach`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           message: `Provide 3 specific, highly actionable recommendations to increase my Financial Health Score from ${health.overallScore}/100 to 95+ in India.`,
           userData: LoggedInUserData

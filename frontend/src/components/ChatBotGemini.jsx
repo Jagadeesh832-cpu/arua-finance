@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/helper/auth";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getApiBaseUrl } from "@/helper/apiUrl";
+import { getAuthHeaders } from "@/helper/authToken";
 
 export default function useChatBotGemini() {
   const { LoggedInUserData } = useAuth();
@@ -34,7 +34,7 @@ export default function useChatBotGemini() {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/ai/coach`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           message: userMessage.trim(),
           chatHistory,
